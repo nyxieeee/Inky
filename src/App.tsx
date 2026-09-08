@@ -1,0 +1,380 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { FoldableLayout } from './components/FoldableLayout';
+import { Dashboard } from './components/Dashboard';
+import { PdfViewer } from './components/PdfViewer';
+import { MultiSignerPanel } from './components/MultiSignerPanel';
+import { InboundPortal } from './components/InboundPortal';
+import { HistoryView } from './components/HistoryView';
+import Toast from './components/Toast';
+
+// Modals
+import { SignaturePadModal } from './components/modals/SignaturePadModal';
+import { ShareInboxModal } from './components/modals/ShareInboxModal';
+import { ConfirmModal } from './components/modals/ConfirmModal';
+
+// Stores & Services
+import { useDocumentStore } from './store/useDocumentStore';
+import { useSignatureStore } from './store/useSignatureStore';
+import { useToastStore } from './store/useToastStore';
+import { useFoldableStore } from './store/useFoldableStore';
+import { inboxService } from './services/inboxService';
+import { InboxLink } from './types';
+
+// Icons
+import {
+  PenTool, Trash2, ArrowLeft, PlusCircle,
+  Inbox, Leaf, Copy, Check,
+} from 'lucide-react';
+
+export function App() {
+  const {
+    documents,
+    selectedDoc,
+    fields,
+    activeTab,
+    isSigningLoading,
+    setActiveTab,
+    setFields,
+    fetchDocuments,
+    selectDocument,
+    uploadDocument,
+    signAndExport,
+    deleteDocument,
+    clearSelection,
+  } = useDocumentStore();
+
+  const {
+    signatures,
+    isSigModalOpen,
+    loadSignatures,
+    openSignatureModal,
+    closeSignatureModal,
+    removeSignature,
+  } = useSignatureStore();
+
+  const { showToast } = useToastStore();
+  const updateDimensions = useFoldableStore((s) => s.updateDimensions);
+
+  // Modals & Local UI state
+  const [targetFieldId, setTargetFieldId] = useState<string | undefined>(undefined);
+  const [isMultiSignerOpen, setIsMultiSignerOpen] = useState(false);
+  const [isShareInboxOpen, setIsShareInboxOpen] = useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+
+  // Inbound portal route detection
+  const pathname = window.location.pathname;
+  const isInboxRoute = pathname.startsWith('/inbox-submit/');
+  const inboundToken = isInboxRoute ? pathname.split('/inbox-submit/')[1] : null;
+
+  // Inbox links list
+  const [inboxLinks, setInboxLinks] = useState<InboxLink[]>([]);
+  const [copiedLink, setCopiedLink] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Responsive / Foldable resize watcher
+  useEffect(() => {
+    const handleResize = () => updateDimensions(window.innerWidth, window.innerHeight);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [updateDimensions]);
+
+  // Initial load
+  useEffect(() => {
+    if (!isInboxRoute) {
+      fetchDocuments();
+      loadSignatures();
+      loadInboxLinks();
+    }
+  }, [isInboxRoute]);
+
+  const loadInboxLinks = async () => {
+    try {
+      const links = await inboxService.listLinks();
+      setInboxLinks(links);
+    } catch (e) {
+      console.error('Failed to load inbox links', e);
+    }
+  };
+
+  if (isInboxRoute && inboundToken) {
+    return <InboundPortal token={inboundToken} />;
+  }
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    await uploadDocument(file);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const handleOpenSigModal = (fieldId?: string) => {
+    setTargetFieldId(fieldId);
+    openSignatureModal(fieldId);
+  };
+
+  const handleSelectSignatureFromModal = (dataUrl: string) => {
+    if (targetFieldId) {
+      setFields((prev) =>
+        prev.map((f) => (f.id === targetFieldId ? { ...f, value: dataUrl } : f))
+      );
+    }
+    closeSignatureModal();
+    loadSignatures();
+  };
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedLink(text);
+    showToast('Link copied to clipboard', 'success');
+    setTimeout(() => setCopiedLink(null), 2500);
+  };
+
+  return (
+    <FoldableLayout
+      activeTab={activeTab === 'editor' ? 'dashboard' : (activeTab as any)}
+      setActiveTab={(tab) => {
+        if (tab === 'dashboard' && selectedDoc) clearSelection();
+        setActiveTab(tab as any);
+      }}
+      onUploadClick={() => fileInputRef.current?.click()}
+      onGenerateInboxClick={() => setIsShareInboxOpen(true)}
+    >
+      {/* Hidden file input */}
+      <input
+        type="file"
+        ref={fileInputRef}
+        onChange={handleFileUpload}
+        accept="application/pdf"
+        className="hidden"
+      />
+
+      {/* ── Dashboard Tab ──────────────────────────────────── */}
+      {activeTab === 'dashboard' && (
+        <Dashboard
+          documents={documents}
+          onSelectDocument={selectDocument}
+          onUploadClick={() => fileInputRef.current?.click()}
+          onGenerateInboxClick={() => setIsShareInboxOpen(true)}
+          onDeleteDocument={(id) => setConfirmDeleteId(id)}
+        />
+      )}
+
+      {/* ── Editor Tab ─────────────────────────────────────── */}
+      {activeTab === 'editor' && selectedDoc && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between pb-2 border-b border-border">
+            <button
+              onClick={clearSelection}
+              className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-xl border border-border bg-card hover:bg-muted text-muted-foreground hover:text-foreground transition-all"
+            >
+              <ArrowLeft size={14} />
+              <span>Back to Documents</span>
+            </button>
+            <div className="text-right">
+              <h2 className="text-sm font-bold text-foreground truncate max-w-xs sm:max-w-md">
+                {selectedDoc.title}
+              </h2>
+              <span className="text-[11px] text-muted-foreground font-mono">
+                {selectedDoc.pageCount} page{selectedDoc.pageCount !== 1 ? 's' : ''}
+              </span>
+            </div>
+          </div>
+
+          <PdfViewer
+            documentId={selectedDoc.id}
+            pdfUrl={`/api/documents/${selectedDoc.id}/file`}
+            fields={fields}
+            setFields={setFields as any}
+            onOpenSignatureModal={handleOpenSigModal}
+            onSignAndExport={() => signAndExport()}
+            onSendClick={() => setIsMultiSignerOpen(true)}
+            isSigningLoading={isSigningLoading}
+          />
+        </div>
+      )}
+
+      {/* ── Signatures Tab ─────────────────────────────────── */}
+      {activeTab === 'signatures' && (
+        <div className="space-y-6 max-w-3xl mx-auto w-full animate-fadeIn pb-12">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="font-display font-bold text-2xl text-foreground">
+                Saved Signatures
+              </h2>
+              <p className="text-sm mt-0.5 text-muted-foreground">
+                Stored locally on your device for one-tap placement
+              </p>
+            </div>
+            <button onClick={() => handleOpenSigModal()} className="btn-primary">
+              <PlusCircle size={15} />
+              <span>New Signature</span>
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {signatures.length === 0 ? (
+              <div className="col-span-1 sm:col-span-2 card-organic rounded-[2.5rem] px-5 py-10 sm:p-12 text-center flex flex-col items-center justify-center space-y-5 w-full">
+                <div className="relative h-14 w-14 rounded-[1.5rem] flex items-center justify-center bg-primary/10 text-primary">
+                  <PenTool size={24} />
+                </div>
+                <div className="w-full text-center">
+                  <h3 className="font-display font-bold text-lg text-foreground">
+                    No Saved Signatures
+                  </h3>
+                  <p className="text-sm mt-1.5 max-w-sm mx-auto text-muted-foreground">
+                    Draw, type, or upload your signature once. It's saved locally for instant placement across all documents.
+                  </p>
+                </div>
+                <button onClick={() => handleOpenSigModal()} className="btn-primary">
+                  <PlusCircle size={15} />
+                  <span>Create First Signature</span>
+                </button>
+              </div>
+            ) : (
+              signatures.map((sig) => (
+                <div key={sig.id} className="card-organic p-4 rounded-[2rem] flex flex-col gap-3">
+                  <div className="h-24 rounded-[1.25rem] flex items-center justify-center p-3 bg-white/70 dark:bg-card/70 border border-dashed border-border">
+                    <img src={sig.dataUrl} alt={sig.label} className="h-full max-w-full object-contain" />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-xs font-bold block text-foreground">{sig.label}</span>
+                      {sig.isDefault && <span className="badge-moss text-[10px] mt-0.5">Default</span>}
+                    </div>
+                    <button
+                      onClick={() => removeSignature(sig.id)}
+                      className="p-2 rounded-xl text-rose-500 hover:scale-110 transition-transform"
+                      title="Delete signature"
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Inbox Tab ──────────────────────────────────────── */}
+      {activeTab === 'inbox' && (
+        <div className="space-y-6 max-w-3xl mx-auto w-full animate-fadeIn pb-12">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="font-display font-bold text-2xl text-foreground">
+                Inbox Links
+              </h2>
+              <p className="text-sm mt-0.5 text-muted-foreground">
+                Shareable links for external senders to submit PDFs directly
+              </p>
+            </div>
+            <button onClick={() => setIsShareInboxOpen(true)} className="btn-primary">
+              <Inbox size={15} />
+              <span>New Link</span>
+            </button>
+          </div>
+
+          <div className="space-y-3">
+            {inboxLinks.length === 0 ? (
+              <div className="card-organic rounded-[2.5rem] p-12 text-center space-y-5">
+                <div className="relative h-14 w-14 rounded-[1.5rem] flex items-center justify-center mx-auto bg-primary/10 text-primary">
+                  <Inbox size={24} />
+                </div>
+                <div>
+                  <h3 className="font-display font-bold text-lg text-foreground">
+                    No Active Links
+                  </h3>
+                  <p className="text-sm mt-1.5 max-w-sm mx-auto text-muted-foreground">
+                    Create a shareable link to let clients or contractors submit documents directly into your signing queue.
+                  </p>
+                </div>
+                <button onClick={() => setIsShareInboxOpen(true)} className="btn-primary">
+                  <Leaf size={15} />
+                  <span>Create First Link</span>
+                </button>
+              </div>
+            ) : (
+              inboxLinks.map((link) => {
+                const url = `${window.location.origin}/inbox-submit/${link.token}`;
+                return (
+                  <div key={link.id} className="card-organic rounded-[2rem] px-5 py-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <h4 className="font-bold text-sm text-foreground">
+                        {link.title || 'Inbox Upload Link'}
+                      </h4>
+                      <span className="badge-clay">
+                        {link.currentUses} / {link.maxUses ?? '∞'} Uses
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 rounded-full px-4 py-2 bg-muted/60 border border-border">
+                      <span className="text-xs font-mono select-all truncate flex-1 text-muted-foreground">
+                        {url}
+                      </span>
+                      <button
+                        onClick={() => copyToClipboard(url)}
+                        className="shrink-0 transition-transform hover:scale-110 text-muted-foreground hover:text-foreground"
+                      >
+                        {copiedLink === url ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} />}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── History Tab ─────────────────────────────────────── */}
+      {activeTab === 'history' && (
+        <HistoryView
+          documents={documents}
+          onSelectDocument={selectDocument}
+          onDeleteDocument={(id) => setConfirmDeleteId(id)}
+          onGoToQueue={() => setActiveTab('dashboard')}
+        />
+      )}
+
+      {/* ── Modals & Notifications ──────────────────────────── */}
+      <SignaturePadModal
+        isOpen={isSigModalOpen}
+        onClose={closeSignatureModal}
+        onSelectSignature={handleSelectSignatureFromModal}
+      />
+
+      {selectedDoc && (
+        <MultiSignerPanel
+          documentId={selectedDoc.id}
+          isOpen={isMultiSignerOpen}
+          onClose={() => setIsMultiSignerOpen(false)}
+          onSuccess={fetchDocuments}
+        />
+      )}
+
+      <ShareInboxModal
+        isOpen={isShareInboxOpen}
+        onClose={() => {
+          setIsShareInboxOpen(false);
+          loadInboxLinks();
+        }}
+      />
+
+      <ConfirmModal
+        isOpen={Boolean(confirmDeleteId)}
+        title="Delete Document"
+        message="Are you sure you want to permanently delete this document? This action cannot be undone."
+        confirmLabel="Delete"
+        isDestructive={true}
+        onConfirm={() => {
+          if (confirmDeleteId) {
+            deleteDocument(confirmDeleteId);
+            setConfirmDeleteId(null);
+          }
+        }}
+        onCancel={() => setConfirmDeleteId(null)}
+      />
+
+      <Toast />
+    </FoldableLayout>
+  );
+}
