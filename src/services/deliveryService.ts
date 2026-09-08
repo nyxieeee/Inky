@@ -7,6 +7,9 @@ import { supabase, isSupabaseConfigured } from '../lib/supabase';
 export interface DispatchedRecipient extends Recipient {
   signingUrl: string;
   mailtoUrl: string;
+  gmailUrl: string;
+  emailSubject: string;
+  emailBody: string;
 }
 
 export const deliveryService = {
@@ -72,16 +75,21 @@ export const deliveryService = {
 
     const dispatched: DispatchedRecipient[] = rawRecipients.map((r) => {
       const signingUrl = `${origin}/sign/${r.token}`;
-      const subject = encodeURIComponent(`Signature requested: ${docTitle}`);
-      const body = encodeURIComponent(
-        `Hello ${r.name},\n\nYou have been invited to review and sign "${docTitle}".\n\nPlease click your secure personal signing link below:\n${signingUrl}\n\n— Sent via Inky`
-      );
-      const mailtoUrl = `mailto:${r.email}?subject=${subject}&body=${body}`;
+      const rawSubject = `Signature requested: ${docTitle}`;
+      const rawBody = `Hello ${r.name},\n\nYou have been invited to review and sign "${docTitle}".\n\nPlease click your secure personal signing link below:\n${signingUrl}\n\n— Sent via Inky`;
+      
+      const subjectEnc = encodeURIComponent(rawSubject);
+      const bodyEnc = encodeURIComponent(rawBody);
+      const mailtoUrl = `mailto:${r.email}?subject=${subjectEnc}&body=${bodyEnc}`;
+      const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(r.email)}&su=${subjectEnc}&body=${bodyEnc}`;
 
       return {
         ...r,
         signingUrl,
         mailtoUrl,
+        gmailUrl,
+        emailSubject: rawSubject,
+        emailBody: rawBody,
       };
     });
 

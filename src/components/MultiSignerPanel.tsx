@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Send, UserPlus, Trash2, Users, CheckCircle2, Mail, Share2, Copy, Check } from 'lucide-react';
+import { X, Send, UserPlus, Trash2, Users, CheckCircle2, Mail, Share2, Copy, Check, ExternalLink } from 'lucide-react';
 import { deliveryService } from '../services/deliveryService';
 import { useToastStore } from '../store/useToastStore';
 
@@ -199,21 +199,39 @@ export const MultiSignerPanel: React.FC<MultiSignerPanelProps> = ({
                       </span>
                     </div>
 
-                    <div className="flex items-center gap-2 pt-1">
-                      {/* 1. Direct Mailto Button */}
+                    <div className="flex items-center gap-1.5 pt-1">
+                      {/* 1. Web Gmail Direct (No OS popup) */}
                       <a
-                        href={item.mailtoUrl}
+                        href={item.gmailUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
                         className="flex-1 py-2 px-3 rounded-full text-[11px] font-bold flex items-center justify-center gap-1.5 transition-all duration-200 hover:scale-[1.02]"
                         style={{
                           background: 'var(--terracotta)',
                           color: '#fff',
                         }}
+                        title="Open composed email directly in Gmail (Web)"
                       >
                         <Mail style={{ height: 13, width: 13 }} />
-                        <span>Send Email</span>
+                        <span>Send with Gmail</span>
                       </a>
 
-                      {/* 2. Device Share (WhatsApp/Slack/Messages) */}
+                      {/* 2. Default Desktop Mail Client (mailto:) */}
+                      <a
+                        href={item.mailtoUrl}
+                        className="p-2 rounded-full transition-all duration-200 hover:scale-110"
+                        style={{
+                          background: 'var(--bg-paper)',
+                          color: 'var(--fg-muted)',
+                          border: '1px solid var(--border-light)',
+                        }}
+                        title="Open in default desktop Mail app (Outlook / Apple Mail)"
+                        aria-label="Open in default desktop Mail app"
+                      >
+                        <ExternalLink style={{ height: 13, width: 13 }} />
+                      </a>
+
+                      {/* 3. Device Share (WhatsApp/Slack/Messages) */}
                       {typeof navigator !== 'undefined' && !!navigator.share && (
                         <button
                           onClick={() => {
@@ -232,7 +250,7 @@ export const MultiSignerPanel: React.FC<MultiSignerPanelProps> = ({
                           title="Share via device (WhatsApp, Slack, Messages)"
                           aria-label="Share via device"
                         >
-                          <Share2 style={{ height: 14, width: 14 }} />
+                          <Share2 style={{ height: 13, width: 13 }} />
                         </button>
                       )}
 
