@@ -16,6 +16,7 @@ interface SignatureState {
   addSignature: (dataUrl: string, type: 'draw' | 'type' | 'upload', label?: string, isDefault?: boolean) => SavedSignature;
   removeSignature: (id: string) => void;
   makeDefault: (id: string) => void;
+  renameSignature: (id: string, label: string) => void;
 }
 
 export const useSignatureStore = create<SignatureState>((set, get) => ({
@@ -23,9 +24,17 @@ export const useSignatureStore = create<SignatureState>((set, get) => ({
   isSigModalOpen: false,
   targetFieldId: undefined,
 
-  loadSignatures: () => {
+  loadSignatures: async () => {
     const list = signatureService.getSignatures();
     set({ signatures: list });
+    try {
+      const cloudList = await signatureService.loadFromCloud();
+      if (cloudList && cloudList.length > 0) {
+        set({ signatures: cloudList });
+      }
+    } catch (e) {
+      // Offline or local mode
+    }
   },
 
   openSignatureModal: (fieldId) => {
@@ -58,5 +67,11 @@ export const useSignatureStore = create<SignatureState>((set, get) => ({
     signatureService.setDefaultSignature(id);
     get().loadSignatures();
     useToastStore.getState().showToast('Default signature updated', 'success');
+  },
+
+  renameSignature: (id, label) => {
+    signatureService.renameSignature(id, label);
+    get().loadSignatures();
+    useToastStore.getState().showToast('Signature renamed', 'success');
   },
 }));

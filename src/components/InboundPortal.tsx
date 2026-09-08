@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Upload, FileText, CheckCircle2, ShieldCheck, FileCheck, ArrowRight, Leaf } from 'lucide-react';
-import { validateInboxToken, submitInboundDocument } from '../lib/apiClient';
+import { inboxService } from '../services/inboxService';
+import { useToastStore } from '../store/useToastStore';
 
 interface InboundPortalProps {
   token: string;
@@ -18,7 +19,7 @@ export const InboundPortal: React.FC<InboundPortalProps> = ({ token }) => {
   const [submittedResult, setSubmittedResult] = useState<any | null>(null);
 
   useEffect(() => {
-    validateInboxToken(token)
+    inboxService.validateToken(token)
       .then(setLinkInfo)
       .catch((err) => setLinkInfo({ valid: false, error: err.message }));
   }, [token]);
@@ -68,17 +69,21 @@ export const InboundPortal: React.FC<InboundPortalProps> = ({ token }) => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!file) { alert('Please select a PDF document to upload'); return; }
+    if (!file) {
+      useToastStore.getState().showToast('Please select a PDF document to upload', 'warning');
+      return;
+    }
     if (!senderName.trim() || !senderEmail.trim()) {
-      alert('Please enter your name and email address');
+      useToastStore.getState().showToast('Please enter your name and email address', 'warning');
       return;
     }
     setIsSubmitting(true);
     try {
-      const res = await submitInboundDocument(token, file, senderName, senderEmail, docTitle);
+      const res = await inboxService.submitInbound(token, file, senderName, senderEmail, docTitle);
       setSubmittedResult(res);
+      useToastStore.getState().showToast('Document submitted successfully', 'success');
     } catch (err: any) {
-      alert(err.message || 'Failed to submit document');
+      useToastStore.getState().showToast(err.message || 'Failed to submit document', 'error');
     } finally {
       setIsSubmitting(false);
     }

@@ -13,9 +13,30 @@ import {
   Send,
   ChevronDown,
   PlusCircle,
+  Users,
 } from 'lucide-react';
-import { SignatureField, FieldType, SavedSignature } from '../types';
+import { SignatureField, FieldType, SavedSignature, Recipient } from '../types';
 import { getDefaultSignature, getSavedSignatures } from '../lib/storage';
+import { deliveryService } from '../services/deliveryService';
+import { Dropdown } from './ui/Dropdown';
+
+export const getSignerColor = (order?: number) => {
+  if (order === 1) return '#C18C5D'; // Terracotta
+  if (order === 2) return '#5D7052'; // Moss
+  if (order === 3) return '#D99E4B'; // Ochre
+  if (order === 4) return '#4E5F70'; // Slate
+  return '#5D7052'; // Default
+};
+
+export const TEXT_FONT_OPTIONS = [
+  { value: 'Inter',           label: 'Inter',           group: 'Professional Sans', fontFamily: 'Inter' },
+  { value: 'Geist',           label: 'Geist',           group: 'Professional Sans', fontFamily: 'Geist' },
+  { value: 'Arial',           label: 'Arial',           group: 'Professional Sans', fontFamily: 'Arial' },
+  { value: 'Times New Roman', label: 'Times New Roman', group: 'Professional Serif', fontFamily: 'Times New Roman' },
+  { value: 'EB Garamond',     label: 'EB Garamond',     group: 'Professional Serif', fontFamily: 'EB Garamond' },
+  { value: 'Dancing Script',  label: 'Dancing Script',  group: 'Handwriting Script', fontFamily: 'Dancing Script' },
+  { value: 'Caveat',          label: 'Caveat',          group: 'Handwriting Script', fontFamily: 'Caveat' },
+];
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js`;
 
@@ -47,11 +68,28 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
   const [selectedFieldId, setSelectedFieldId] = useState<string | null>(null);
   const [isDragging, setIsDragging]       = useState<boolean>(false);
   const [dragOffset, setDragOffset]       = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [isResizing, setIsResizing]       = useState<boolean>(false);
+  const [resizeStart, setResizeStart]     = useState<{ x: number; y: number; width: number; height: number }>({
+    x: 0,
+    y: 0,
+    width: 0,
+    height: 0,
+  });
 
   // Signature dropdown state
   const [isSigDropdownOpen, setIsSigDropdownOpen] = useState<boolean>(false);
   const [savedSignatures, setSavedSignatures]     = useState<SavedSignature[]>([]);
   const sigDropdownRef = useRef<HTMLDivElement | null>(null);
+
+  // Recipient list for field assignment
+  const [recipients, setRecipients]               = useState<Recipient[]>([]);
+
+  useEffect(() => {
+    if (documentId) {
+      const list = deliveryService.getRecipients(documentId);
+      setRecipients(list);
+    }
+  }, [documentId]);
 
   const canvasRef    = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -111,10 +149,13 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
     const defaultSig = getDefaultSignature();
     const nowStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
     let initialValue = '';
-    if (fieldType === 'signature' && defaultSig) initialValue = defaultSig.dataUrl;
-    if (fieldType === 'date')   initialValue = nowStr;
-    if (fieldType === 'name')   initialValue = 'Your Name';
-    if (fieldType === 'text')   initialValue = 'Text';
+    if (fieldType === 'signature' && defaultSig) {
+      handleSelectSavedSignature(defaultSig.dataUrl);
+      return;
+    }
+    if (fieldType === 'date') initialValue = nowStr;
+    if (fieldType === 'name') initialValue = 'Your Name';
+    if (fieldType === 'text') initialValue = 'Text';
 
     const newField: SignatureField = {
       id: `field_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
@@ -122,10 +163,11 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
       pageNumber: currentPage,
       x: 30 + (fields.length * 3) % 30,
       y: 35 + (fields.length * 5) % 35,
-      width:  fieldType === 'signature' ? 25 : 18,
-      height: fieldType === 'signature' ? 10 : 6,
+      width:  fieldType === 'signature' ? 24 : 20,
+      height: fieldType === 'signature' ? 8 : 5,
       fieldType,
       value: initialValue,
+      fontFamily: fieldType === 'text' || fieldType === 'date' || fieldType === 'name' ? 'Inter' : undefined,
       required: true,
     };
     setFields((prev) => [...prev, newField]);
@@ -153,32 +195,80 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
     });
   };
 
+  const handleResizeMouseDown = (fieldId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setSelectedFieldId(fieldId);
+    setIsResizing(true);
+    const field = fields.find((f) => f.id === fieldId);
+    if (!field) return;
+    setResizeStart({
+      x: e.clientX,
+      y: e.clientY,
+      width: field.width,
+      height: field.height,
+    });
+  };
+
   const handleMouseMove = (e: React.MouseEvent) => {
-    if (!isDragging || !selectedFieldId || !containerRef.current) return;
+    if (!selectedFieldId || !containerRef.current) return;
     const rect = containerRef.current.getBoundingClientRect();
-    const pctX = Math.max(0, Math.min(90, ((e.clientX - dragOffset.x) / rect.width)  * 100));
-    const pctY = Math.max(0, Math.min(90, ((e.clientY - dragOffset.y) / rect.height) * 100));
-    setFields((prev) => prev.map((f) => f.id === selectedFieldId ? { ...f, x: pctX, y: pctY } : f));
+
+    if (isDragging) {
+      const pctX = Math.max(0, Math.min(92, ((e.clientX - dragOffset.x) / rect.width) * 100));
+      const pctY = Math.max(0, Math.min(95, ((e.clientY - dragOffset.y) / rect.height) * 100));
+      setFields((prev) => prev.map((f) => (f.id === selectedFieldId ? { ...f, x: pctX, y: pctY } : f)));
+    } else if (isResizing) {
+      const deltaX = ((e.clientX - resizeStart.x) / rect.width) * 100;
+      const deltaY = ((e.clientY - resizeStart.y) / rect.height) * 100;
+      const field = fields.find((f) => f.id === selectedFieldId);
+      if (!field) return;
+
+      const newWidth = Math.max(8, Math.min(85, resizeStart.width + deltaX));
+      const aspect = resizeStart.width / (resizeStart.height || 1);
+      // For signature fields, preserve proportional aspect ratio
+      const newHeight = field.fieldType === 'signature'
+        ? Math.max(3, Math.min(50, newWidth / aspect))
+        : Math.max(3, Math.min(50, resizeStart.height + deltaY));
+
+      setFields((prev) =>
+        prev.map((f) => (f.id === selectedFieldId ? { ...f, width: newWidth, height: newHeight } : f))
+      );
+    }
+  };
+
+  const handleMouseUp = () => {
+    setIsDragging(false);
+    setIsResizing(false);
   };
 
   const currentPageFields = fields.filter((f) => f.pageNumber === currentPage);
 
   const handleSelectSavedSignature = (dataUrl: string) => {
-    const newField: SignatureField = {
-      id: `field_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-      documentId,
-      pageNumber: currentPage,
-      x: 30 + (fields.length * 3) % 30,
-      y: 35 + (fields.length * 5) % 35,
-      width: 25,
-      height: 10,
-      fieldType: 'signature',
-      value: dataUrl,
-      required: true,
-    };
-    setFields((prev) => [...prev, newField]);
-    setSelectedFieldId(newField.id);
     setIsSigDropdownOpen(false);
+    const img = new Image();
+    img.onload = () => {
+      const naturalAspect = img.naturalWidth / img.naturalHeight;
+      const defaultHeight = 7.5;
+      const rect = containerRef.current?.getBoundingClientRect();
+      const pageAspect = rect ? rect.height / rect.width : 1.4;
+      const targetWidth = Math.min(48, Math.max(12, defaultHeight * pageAspect * naturalAspect));
+
+      const newField: SignatureField = {
+        id: `field_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        documentId,
+        pageNumber: currentPage,
+        x: 30 + (fields.length * 3) % 30,
+        y: 35 + (fields.length * 5) % 35,
+        width: Math.round(targetWidth * 10) / 10,
+        height: defaultHeight,
+        fieldType: 'signature',
+        value: dataUrl,
+        required: true,
+      };
+      setFields((prev) => [...prev, newField]);
+      setSelectedFieldId(newField.id);
+    };
+    img.src = dataUrl;
   };
 
   const handleAddNewSignature = () => {
@@ -190,8 +280,8 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
       pageNumber: currentPage,
       x: 30 + (fields.length * 3) % 30,
       y: 35 + (fields.length * 5) % 35,
-      width: 25,
-      height: 10,
+      width: 24,
+      height: 8,
       fieldType: 'signature',
       value: '',
       required: true,
@@ -259,7 +349,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
 
             {isSigDropdownOpen && (
               <div
-                className="absolute top-full left-0 mt-2 w-72 rounded-2xl p-2 z-50 animate-fadeIn"
+                className="absolute top-full left-0 mt-2 w-72 rounded-[1.75rem] p-2.5 z-50 animate-fadeIn"
                 style={{
                   background: 'var(--surface)',
                   border: '1px solid var(--border)',
@@ -269,9 +359,9 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
                 <div className="px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-left" style={{ color: 'var(--fg-muted)' }}>
                   Your Signatures
                 </div>
-                <div className="max-h-56 overflow-y-auto space-y-1 my-1">
+                <div className="max-h-56 overflow-y-auto space-y-1 my-1 pr-1">
                   {savedSignatures.length === 0 ? (
-                    <div className="px-3 py-4 text-xs text-center" style={{ color: 'var(--fg-muted)' }}>
+                    <div className="px-3 py-4 text-xs text-center font-medium" style={{ color: 'var(--fg-muted)' }}>
                       No saved signatures found
                     </div>
                   ) : (
@@ -279,9 +369,9 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
                       <button
                         key={sig.id}
                         onClick={() => handleSelectSavedSignature(sig.dataUrl)}
-                        className="w-full flex items-center justify-between gap-3 px-3 py-2 rounded-xl text-left transition-colors hover:bg-[var(--moss-dim)] group"
+                        className="w-full flex items-center justify-between gap-3 px-3 py-2 rounded-2xl text-left transition-colors hover:bg-[var(--moss-dim)] group"
                       >
-                        <div className="h-8 w-28 flex items-center justify-center p-1 rounded-lg bg-white/90 border border-[var(--border-light)] shrink-0">
+                        <div className="h-8 w-28 flex items-center justify-center p-1 rounded-xl bg-white/90 border border-[var(--border-light)] shrink-0">
                           <img src={sig.dataUrl} alt={sig.label} className="h-full max-w-full object-contain" />
                         </div>
                         <div className="min-w-0 flex-1">
@@ -299,7 +389,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
                 <div className="h-px my-1" style={{ background: 'var(--border-light)' }} />
                 <button
                   onClick={handleAddNewSignature}
-                  className="w-full flex items-center gap-2 px-3 py-2.5 rounded-xl text-xs font-bold transition-colors hover:bg-[var(--moss-dim)]"
+                  className="w-full flex items-center gap-2 px-3 py-2.5 rounded-2xl text-xs font-bold transition-colors hover:bg-[var(--moss-dim)]"
                   style={{ color: 'var(--moss)' }}
                 >
                   <PlusCircle style={{ height: 16, width: 16 }} />
@@ -310,6 +400,81 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
           </div>
           {toolBtn('+ Date',     <Calendar style={{ height: 13, width: 13 }} />, () => addField('date'))}
           {toolBtn('+ Text',     <Type     style={{ height: 13, width: 13 }} />, () => addField('text'))}
+
+          {/* Active Text Field Font Selector */}
+          {(() => {
+            const activeField = fields.find((f) => f.id === selectedFieldId);
+            if (activeField && (activeField.fieldType === 'text' || activeField.fieldType === 'date' || activeField.fieldType === 'name')) {
+              return (
+                <div className="flex items-center gap-1.5 pl-2 ml-1 border-l border-[var(--border)] animate-fadeIn">
+                  <span className="text-[11px] font-bold hidden sm:inline" style={{ color: 'var(--fg-muted)' }}>Font:</span>
+                  <div className="w-36 sm:w-44">
+                    <Dropdown
+                      value={activeField.fontFamily || 'Inter'}
+                      onChange={(val) => {
+                        const font = String(val);
+                        setFields((prev) =>
+                          prev.map((f) => (f.id === activeField.id ? { ...f, fontFamily: font } : f))
+                        );
+                      }}
+                      options={TEXT_FONT_OPTIONS}
+                      buttonClassName="py-1 px-3 text-xs bg-white/80"
+                    />
+                  </div>
+                </div>
+              );
+            }
+            return null;
+          })()}
+
+          {/* Active Field Signer Assignment Selector */}
+          {(() => {
+            const activeField = fields.find((f) => f.id === selectedFieldId);
+            if (!activeField) return null;
+
+            const signerOptions = [
+              { value: '0', label: 'Assign: Anyone / Owner' },
+              ...recipients.map((r) => ({
+                value: String(r.signingOrder),
+                label: `Signer ${r.signingOrder}: ${r.name}`,
+              })),
+              { value: '__add__', label: '+ Add / Edit Signers...' },
+            ];
+
+            return (
+              <div className="flex items-center gap-1.5 pl-2 ml-1 border-l border-[var(--border)] animate-fadeIn">
+                <Users style={{ height: 12, width: 12, color: 'var(--fg-muted)' }} />
+                <div className="w-36 sm:w-44">
+                  <Dropdown
+                    value={String(activeField.signerOrder || 0)}
+                    onChange={(val) => {
+                      if (val === '__add__') {
+                        onSendClick();
+                        return;
+                      }
+                      const order = Number(val);
+                      const targetRec = recipients.find((r) => r.signingOrder === order);
+                      setFields((prev) =>
+                        prev.map((f) =>
+                          f.id === activeField.id
+                            ? {
+                                ...f,
+                                signerOrder: order === 0 ? undefined : order,
+                                signerName: targetRec?.name,
+                                signerEmail: targetRec?.email,
+                                signerId: targetRec?.id,
+                              }
+                            : f
+                        )
+                      );
+                    }}
+                    options={signerOptions}
+                    buttonClassName="py-1 px-2.5 text-xs bg-white/80"
+                  />
+                </div>
+              </div>
+            );
+          })()}
         </div>
 
         {/* Controls */}
@@ -417,7 +582,8 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
           className="flex-1 overflow-auto p-4 sm:p-8 flex justify-center items-start select-none"
           style={{ background: 'var(--bg)' }}
           onMouseMove={handleMouseMove}
-          onMouseUp={() => setIsDragging(false)}
+          onMouseUp={handleMouseUp}
+          onMouseLeave={handleMouseUp}
         >
           <div
             ref={containerRef}
@@ -427,7 +593,9 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
             <canvas ref={canvasRef} className="block max-w-full" />
 
             {/* Field Overlay */}
-            {currentPageFields.map((field) => (
+            {currentPageFields.map((field) => {
+              const fieldSignerColor = getSignerColor(field.signerOrder);
+              return (
               <div
                 key={field.id}
                 onMouseDown={(e) => handleMouseDown(field.id, e)}
@@ -441,10 +609,10 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
                   cursor:   'move',
                   zIndex:   selectedFieldId === field.id ? 20 : 10,
                   border:   selectedFieldId === field.id
-                    ? '2px solid #5D7052'
-                    : '2px dashed rgba(93,112,82,0.50)',
+                    ? `2px solid ${fieldSignerColor}`
+                    : `2px dashed ${fieldSignerColor}99`,
                   borderRadius: 10,
-                  background: 'transparent',
+                  background: field.signerOrder ? `${fieldSignerColor}08` : 'transparent',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
@@ -453,17 +621,41 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
                 }}
                 className="group"
               >
+                {/* Signer Tag Badge */}
+                {field.signerOrder ? (
+                  <span
+                    className="absolute -top-2.5 left-2 px-2 py-0.5 rounded-full text-[9px] font-bold text-white shadow-xs z-30 pointer-events-none truncate max-w-[120px]"
+                    style={{ background: fieldSignerColor }}
+                  >
+                    {field.signerName ? `${field.signerOrder}: ${field.signerName}` : `Signer ${field.signerOrder}`}
+                  </span>
+                ) : null}
                 {field.value ? (
                   field.value.startsWith('data:image') ? (
                     <img
                       src={field.value}
                       alt="Signature"
-                      className="h-full w-full object-contain pointer-events-none"
+                      className="h-full w-full object-contain pointer-events-none select-none"
+                    />
+                  ) : selectedFieldId === field.id ? (
+                    <input
+                      type="text"
+                      value={field.value || ''}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setFields((prev) =>
+                          prev.map((f) => (f.id === field.id ? { ...f, value: val } : f))
+                        );
+                      }}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      style={{ fontFamily: field.fontFamily || 'Inter, sans-serif' }}
+                      className="text-xs font-bold px-1.5 py-0.5 rounded bg-white/95 dark:bg-card/95 border border-primary text-foreground outline-none w-full text-center"
+                      autoFocus
                     />
                   ) : (
                     <span
                       className="text-xs font-semibold px-2 py-0.5 rounded pointer-events-none font-bold"
-                      style={{ color: 'var(--fg)' }}
+                      style={{ color: 'var(--fg)', fontFamily: field.fontFamily || 'Inter, sans-serif' }}
                     >
                       {field.value}
                     </span>
@@ -482,18 +674,38 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
                 {/* Delete handle */}
                 <button
                   onClick={(e) => removeField(field.id, e)}
-                  className="absolute -top-2.5 -right-2.5 h-5 w-5 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+                  onMouseDown={(e) => e.stopPropagation()}
+                  className={`absolute -top-2.5 -right-2.5 h-6 w-6 rounded-full flex items-center justify-center transition-all duration-200 z-30 cursor-pointer ${
+                    selectedFieldId === field.id ? 'opacity-100 scale-100' : 'opacity-0 group-hover:opacity-100'
+                  }`}
                   style={{
                     background: '#A85448',
                     color: '#fff',
-                    boxShadow: '0 2px 8px rgba(168,84,72,0.30)',
+                    boxShadow: '0 2px 8px rgba(168,84,72,0.40)',
                   }}
+                  title="Remove field"
                   aria-label="Remove field"
                 >
-                  <Trash2 style={{ height: 10, width: 10 }} />
+                  <Trash2 style={{ height: 11, width: 11 }} />
                 </button>
+
+                {/* Corner Resize handle */}
+                {selectedFieldId === field.id && (
+                  <div
+                    onMouseDown={(e) => handleResizeMouseDown(field.id, e)}
+                    className="absolute -bottom-2 -right-2 w-4 h-4 rounded-full flex items-center justify-center cursor-se-resize z-30 transition-transform hover:scale-125"
+                    style={{
+                      background: 'var(--moss)',
+                      boxShadow: '0 2px 6px rgba(0,0,0,0.30)',
+                      border: '2px solid #ffffff',
+                    }}
+                    title="Drag to resize"
+                    aria-label="Resize handle"
+                  />
+                )}
               </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       </div>

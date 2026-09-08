@@ -7,8 +7,12 @@ import {
   Trash2,
   ArrowRight,
   ShieldCheck,
+  PenTool,
+  Download,
 } from 'lucide-react';
 import { Document } from '../types';
+import * as storage from '../lib/storage';
+import { downloadBlob } from '../utils';
 
 interface HistoryViewProps {
   documents: Document[];
@@ -19,6 +23,7 @@ interface HistoryViewProps {
 
 export const HistoryView: React.FC<HistoryViewProps> = ({
   documents,
+  onSelectDocument,
   onDeleteDocument,
   onGoToQueue,
 }) => {
@@ -31,19 +36,35 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
     return d.title.toLowerCase().includes(q) || d.originalFileName.toLowerCase().includes(q);
   });
 
+  const handleDownloadSigned = async (doc: Document, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const signedBytes = await storage.getSignedPdfBytes(doc.id) || await storage.getOriginalPdfBytes(doc.id);
+    if (signedBytes) {
+      const blob = new Blob([signedBytes as any], { type: 'application/pdf' });
+      downloadBlob(blob, `${doc.title.replace(/\s+/g, '_')}_signed.pdf`);
+    }
+  };
+
+  const handleViewSigned = async (doc: Document, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const signedBytes = await storage.getSignedPdfBytes(doc.id) || await storage.getOriginalPdfBytes(doc.id);
+    if (signedBytes) {
+      const blob = new Blob([signedBytes as any], { type: 'application/pdf' });
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank');
+    }
+  };
+
   return (
-    <div className="space-y-6 animate-fadeIn pb-12 w-full max-w-4xl mx-auto">
-      {/* ── Header ───────────────────────────────────────────── */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+    <div className="space-y-6 max-w-4xl mx-auto w-full animate-fadeIn pb-12">
+      {/* ── Header ────────────────────────────────────────── */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <div className="flex flex-wrap items-center gap-2.5">
+          <div className="flex items-center gap-2.5">
             <h2 className="font-display font-bold text-2xl" style={{ color: 'var(--fg)' }}>
               Document History
             </h2>
-            <span
-              className="px-4 py-1 rounded-full text-xs font-bold whitespace-nowrap shrink-0"
-              style={{ background: 'var(--moss-dim)', color: 'var(--moss)' }}
-            >
+            <span className="badge-moss text-xs font-bold px-2.5 py-0.5 rounded-full">
               {signedDocs.length} signed
             </span>
           </div>
@@ -52,59 +73,47 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
           </p>
         </div>
 
-        {/* Search Input */}
-        {signedDocs.length > 0 && (
-          <div className="relative w-full sm:w-64">
-            <Search
-              className="absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none"
-              style={{ height: 15, width: 15, color: 'var(--fg-muted)' }}
-            />
-            <input
-              type="search"
-              placeholder="Search history…"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="input-organic pl-10 h-10 text-sm w-full"
-              aria-label="Search signed documents"
-            />
-          </div>
-        )}
+        {/* Search */}
+        <div className="relative w-full sm:w-64">
+          <Search
+            className="absolute left-3.5 top-1/2 -translate-y-1/2"
+            style={{ height: 14, width: 14, color: 'var(--fg-muted)' }}
+          />
+          <input
+            type="search"
+            placeholder="Search history…"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="input-organic pl-9 h-10 text-sm"
+            aria-label="Search history"
+          />
+        </div>
       </div>
 
-      {/* ── Document List ────────────────────────────────────── */}
+      {/* ── Document List ─────────────────────────────────── */}
       <div className="space-y-3">
         {filteredDocs.length === 0 ? (
-          <div className="card-organic rounded-[2.5rem] px-5 py-12 sm:p-16 text-center flex flex-col items-center justify-center space-y-5 w-full">
-            {/* Ambient icon badge */}
-            <div className="relative inline-block mx-auto">
-              <div
-                className="absolute inset-0 rounded-full blur-2xl"
-                style={{ background: 'var(--moss-dim)', transform: 'scale(1.8)' }}
-                aria-hidden
-              />
-              <div
-                className="relative h-16 w-16 rounded-3xl flex items-center justify-center mx-auto"
-                style={{ background: 'var(--moss-dim)' }}
-              >
-                <History style={{ height: 28, width: 28, color: 'var(--moss)' }} />
-              </div>
+          <div className="card-organic rounded-[2.5rem] px-5 py-12 text-center flex flex-col items-center justify-center space-y-4">
+            <div
+              className="h-14 w-14 rounded-2xl flex items-center justify-center mx-auto"
+              style={{ background: 'var(--moss-dim)' }}
+            >
+              <History style={{ height: 24, width: 24, color: 'var(--moss)' }} />
             </div>
-
-            <div className="w-full text-center">
-              <h3 className="font-display font-bold text-xl" style={{ color: 'var(--fg)' }}>
-                {signedDocs.length === 0 ? 'No Signed Documents Yet' : 'No Matches Found'}
+            <div>
+              <h3 className="font-display font-bold text-lg" style={{ color: 'var(--fg)' }}>
+                {searchQuery ? 'No matching documents' : 'No signed documents yet'}
               </h3>
-              <p className="text-sm mt-1 max-w-sm mx-auto" style={{ color: 'var(--fg-muted)' }}>
-                {signedDocs.length === 0
-                  ? 'Once you sign and export documents, they will be archived here for instant viewing and downloading.'
-                  : 'Try searching with a different keyword.'}
+              <p className="text-sm mt-1 max-w-xs mx-auto" style={{ color: 'var(--fg-muted)' }}>
+                {searchQuery
+                  ? 'Try a different search term.'
+                  : 'Documents you sign and download will appear here with verification proofs.'}
               </p>
             </div>
-
-            {signedDocs.length === 0 && (
-              <button onClick={onGoToQueue} className="btn-primary mx-auto">
-                <span>Go to Queue</span>
-                <ArrowRight style={{ height: 15, width: 15 }} />
+            {!searchQuery && (
+              <button onClick={onGoToQueue} className="btn-primary btn-sm">
+                <span>Go to Signing Queue</span>
+                <ArrowRight style={{ height: 13, width: 13 }} />
               </button>
             )}
           </div>
@@ -112,7 +121,8 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
           filteredDocs.map((doc) => (
             <div
               key={doc.id}
-              className="card-organic rounded-[2rem] px-5 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-all duration-300 group"
+              onClick={() => onSelectDocument && onSelectDocument(doc)}
+              className="card-organic rounded-[2rem] px-5 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-all duration-300 group cursor-pointer hover:border-[var(--moss)] hover:shadow-md"
             >
               {/* Left: icon + metadata */}
               <div className="flex items-center gap-4 min-w-0">
@@ -146,25 +156,49 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
 
               {/* Right: Actions */}
               <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
+                {/* Edit document button */}
+                {onSelectDocument && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onSelectDocument(doc);
+                    }}
+                    className="btn-primary btn-sm flex items-center gap-1.5"
+                    aria-label="Edit or re-sign document"
+                    title="Edit fields or re-sign document"
+                  >
+                    <PenTool style={{ height: 13, width: 13 }} />
+                    <span>Edit</span>
+                  </button>
+                )}
+
+                {/* Download signed PDF */}
+                <button
+                  onClick={(e) => handleDownloadSigned(doc, e)}
+                  className="btn-outline btn-sm flex items-center gap-1.5"
+                  aria-label="Download signed document"
+                  title="Download signed PDF"
+                >
+                  <Download style={{ height: 13, width: 13 }} />
+                  <span>Download</span>
+                </button>
+
                 {/* View signed PDF */}
-                <a
-                  href={`/api/documents/${doc.id}/file`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="btn-ghost btn-sm"
+                <button
+                  onClick={(e) => handleViewSigned(doc, e)}
+                  className="btn-ghost btn-sm flex items-center gap-1.5"
                   aria-label="Open signed document"
                   title="View PDF in new tab"
                 >
-                  <ExternalLink style={{ height: 15, width: 15 }} />
+                  <ExternalLink style={{ height: 13, width: 13 }} />
                   <span>View</span>
-                </a>
+                </button>
 
                 {/* Delete document */}
                 <button
-                  onClick={() => {
-                    if (confirm('Permanently delete this signed document from history?')) {
-                      onDeleteDocument(doc.id);
-                    }
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDeleteDocument(doc.id);
                   }}
                   className="p-2 rounded-xl transition-all duration-200 hover:scale-110"
                   style={{ color: 'var(--fg-muted)' }}

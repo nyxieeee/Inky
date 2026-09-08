@@ -1,12 +1,27 @@
 import React, { useState } from 'react';
 import { X, Inbox, Copy, Check, Link } from 'lucide-react';
-import { createInboxLink } from '../../lib/apiClient';
+import { inboxService } from '../../services/inboxService';
 import { InboxLink } from '../../types';
+import { useToastStore } from '../../store/useToastStore';
+import { Dropdown } from '../ui/Dropdown';
 
 interface ShareInboxModalProps {
   isOpen: boolean;
   onClose: () => void;
 }
+
+const EXPIRATION_OPTIONS = [
+  { value: 24,  label: '24 Hours', sublabel: '1 Day' },
+  { value: 72,  label: '3 Days' },
+  { value: 168, label: '7 Days', sublabel: '1 Week' },
+  { value: 720, label: '30 Days', sublabel: '1 Month' },
+];
+
+const MAX_USES_OPTIONS = [
+  { value: 1,  label: '1 Submission', sublabel: 'Single use' },
+  { value: 5,  label: '5 Submissions' },
+  { value: 20, label: '20 Submissions' },
+];
 
 export const ShareInboxModal: React.FC<ShareInboxModalProps> = ({ isOpen, onClose }) => {
   const [title, setTitle]             = useState('Send document for my signature');
@@ -22,10 +37,11 @@ export const ShareInboxModal: React.FC<ShareInboxModalProps> = ({ isOpen, onClos
   const handleGenerate = async () => {
     setIsLoading(true);
     try {
-      const link = await createInboxLink({ title, note, expiresHours, maxUses });
+      const link = await inboxService.createLink({ title, note, expiresHours, maxUses });
       setGeneratedLink(link);
+      useToastStore.getState().showToast('Inbox link created successfully', 'success');
     } catch (err: any) {
-      alert(err.message || 'Failed to create link');
+      useToastStore.getState().showToast(err.message || 'Failed to create link', 'error');
     } finally {
       setIsLoading(false);
     }
@@ -75,33 +91,30 @@ export const ShareInboxModal: React.FC<ShareInboxModalProps> = ({ isOpen, onClos
             style={{ background: 'var(--bg-stone)', color: 'var(--fg-muted)' }}
             aria-label="Close"
           >
-            <X style={{ height: 15, width: 15 }} />
+            <X style={{ height: 14, width: 14 }} />
           </button>
         </div>
 
+        {/* Body */}
         <div className="p-6 space-y-4">
           {!generatedLink ? (
             <>
-              <p className="text-xs leading-relaxed" style={{ color: 'var(--fg-muted)' }}>
-                Create a secure, single-use or multi-use link for someone to upload a PDF directly into your signing queue — no account needed.
-              </p>
-
               <div>
                 <label className="block text-xs font-bold mb-1.5" style={{ color: 'var(--fg)' }}>
-                  Request Title
+                  Link Purpose / Title
                 </label>
                 <input
                   type="text"
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
-                  className="input-organic"
-                  placeholder="e.g. Send contract for signing"
+                  className="input-organic text-sm"
+                  placeholder="E.g., Freelance Contract Upload"
                 />
               </div>
 
               <div>
                 <label className="block text-xs font-bold mb-1.5" style={{ color: 'var(--fg)' }}>
-                  Note for Sender
+                  Instructions for Sender
                 </label>
                 <textarea
                   rows={2}
@@ -114,33 +127,20 @@ export const ShareInboxModal: React.FC<ShareInboxModalProps> = ({ isOpen, onClos
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-bold mb-1.5" style={{ color: 'var(--fg)' }}>
-                    Expiration
-                  </label>
-                  <select
+                  <Dropdown
+                    label="Expiration"
                     value={expiresHours}
-                    onChange={(e) => setExpiresHours(Number(e.target.value))}
-                    className="select-organic"
-                  >
-                    <option value={24}>24 Hours</option>
-                    <option value={72}>3 Days</option>
-                    <option value={168}>7 Days</option>
-                    <option value={720}>30 Days</option>
-                  </select>
+                    onChange={(val) => setExpiresHours(Number(val))}
+                    options={EXPIRATION_OPTIONS}
+                  />
                 </div>
                 <div>
-                  <label className="block text-xs font-bold mb-1.5" style={{ color: 'var(--fg)' }}>
-                    Max Submissions
-                  </label>
-                  <select
+                  <Dropdown
+                    label="Max Submissions"
                     value={maxUses}
-                    onChange={(e) => setMaxUses(Number(e.target.value))}
-                    className="select-organic"
-                  >
-                    <option value={1}>1 Use</option>
-                    <option value={5}>5 Uses</option>
-                    <option value={20}>20 Uses</option>
-                  </select>
+                    onChange={(val) => setMaxUses(Number(val))}
+                    options={MAX_USES_OPTIONS}
+                  />
                 </div>
               </div>
             </>

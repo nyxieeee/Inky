@@ -36,13 +36,22 @@ export default {
           DEFAULT:    '#F0EBE5',  // Stone
           foreground: '#78786C',  // Dried Grass
         },
+        card: {
+          DEFAULT:    '#FEFEFA',  // Surface Warm White
+          foreground: '#2C2C24',
+        },
+        popover: {
+          DEFAULT:    '#FEFEFA',
+          foreground: '#2C2C24',
+        },
         border:       '#DED8CF',  // Raw Timber
         destructive:  '#A85448',  // Burnt Sienna
 
         // Dark mode variants
         dark: {
           bg:      '#1A1D17',   // Forest Floor
-          surface: '#22261E',   // Dark Card
+          surface: '#1E2219',   // Dark Card
+          card:    '#1E2219',
           border:  'rgba(255,255,255,0.08)',
           fg:      '#E8E5DC',   // Aged Parchment
           muted:   '#8A8A7E',   // Dim Grass

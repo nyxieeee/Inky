@@ -360,6 +360,14 @@
 }
 ::-webkit-scrollbar-thumb:hover { background: rgba(93,112,82,0.40); }
 
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
 /* ─── Animations ────────────────────────────────────────── */
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(8px); }

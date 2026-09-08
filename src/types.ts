@@ -16,12 +16,14 @@ export interface Document {
   source: DocumentSource;
   filePath: string;
   originalFileName: string;
-  fileSizeBytes: number;
+  fileSizeBytes?: number;
   pageCount: number;
   createdAt: string;
   updatedAt: string;
   inboxLinkId?: string;
   auditHash?: string;
+  senderName?: string;
+  senderEmail?: string;
 }
 
 export interface SignatureField {
@@ -34,8 +36,11 @@ export interface SignatureField {
   height: number;
   fieldType: FieldType;
   value?: string; // image data URL or text
+  fontFamily?: string; // e.g. 'Inter', 'Times New Roman', etc.
   signerId?: string;
   signerEmail?: string;
+  signerName?: string;
+  signerOrder?: number;
   required: boolean;
 }
 

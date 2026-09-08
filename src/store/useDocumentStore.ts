@@ -44,8 +44,18 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
 
   setFields: (fields) => {
     if (typeof fields === 'function') {
-      set((state) => ({ fields: fields(state.fields) }));
+      set((state) => {
+        const nextFields = fields(state.fields);
+        if (state.selectedDoc) {
+          documentService.saveFields(state.selectedDoc.id, nextFields);
+        }
+        return { fields: nextFields };
+      });
     } else {
+      const { selectedDoc } = get();
+      if (selectedDoc) {
+        documentService.saveFields(selectedDoc.id, fields);
+      }
       set({ fields });
     }
   },

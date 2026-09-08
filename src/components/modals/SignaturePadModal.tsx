@@ -1,14 +1,40 @@
 import React, { useRef, useState, useEffect } from 'react';
 import SignaturePad from 'signature_pad';
-import { X, PenTool, Type, Upload, Check, RotateCcw } from 'lucide-react';
+import { X, PenTool, Type, Upload, Check, RotateCcw, ChevronDown } from 'lucide-react';
 import { saveSignature, getSavedSignatures } from '../../lib/storage';
 import { SavedSignature } from '../../types';
+import { trimCanvas, processUploadedSignature } from '../../utils';
+import { useToastStore } from '../../store/useToastStore';
+
+import { Dropdown, DropdownOption } from '../ui/Dropdown';
 
 interface SignaturePadModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSelectSignature: (dataUrl: string, label: string) => void;
 }
+
+export const AVAILABLE_FONTS = [
+  // Professional & Clean
+  { id: 'Inter',           name: 'Inter',           style: 'Modern Sans',        group: 'Professional Fonts' },
+  { id: 'Geist',           name: 'Geist',           style: 'Clean Geometric',    group: 'Professional Fonts' },
+  { id: 'Arial',           name: 'Arial',           style: 'Universal Sans',     group: 'Professional Fonts' },
+  { id: 'Times New Roman', name: 'Times New Roman', style: 'Classic Editorial',   group: 'Professional Fonts' },
+  { id: 'EB Garamond',     name: 'EB Garamond',     style: 'Book Serif',         group: 'Professional Fonts' },
+
+  // Signature & Cursive Scripts
+  { id: 'Dancing Script',  name: 'Dancing Script',  style: 'Classic Cursive',    group: 'Signature Scripts' },
+  { id: 'Great Vibes',     name: 'Great Vibes',     style: 'Calligraphy',        group: 'Signature Scripts' },
+  { id: 'Caveat',          name: 'Caveat',          style: 'Casual Hand',        group: 'Signature Scripts' },
+  { id: 'Sacramento',      name: 'Sacramento',      style: 'Delicate Script',    group: 'Signature Scripts' },
+  { id: 'Allura',          name: 'Allura',          style: 'Flourish',           group: 'Signature Scripts' },
+  { id: 'Satisfy',         name: 'Satisfy',         style: 'Brush Pen',          group: 'Signature Scripts' },
+  { id: 'Alex Brush',      name: 'Alex Brush',      style: 'Flowing Pen',        group: 'Signature Scripts' },
+  { id: 'Pacifico',        name: 'Pacifico',        style: 'Bold Retro',         group: 'Signature Scripts' },
+  { id: 'Marck Script',    name: 'Marck Script',    style: 'Signature Hand',     group: 'Signature Scripts' },
+];
+
+export const SIGNATURE_FONTS = AVAILABLE_FONTS;
 
 const INK_COLORS = [
   { value: '#2C2C24', label: 'Deep Loam'   },
@@ -23,7 +49,9 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
 }) => {
   const [activeTab, setActiveTab]     = useState<'draw' | 'type' | 'upload' | 'saved'>('draw');
   const [typedText, setTypedText]     = useState('Your Name');
+  const [selectedFont, setSelectedFont] = useState(SIGNATURE_FONTS[0].id);
   const [penColor, setPenColor]       = useState(INK_COLORS[0].value);
+  const [sigLabel, setSigLabel]       = useState('');
   const [isDefault, setIsDefault]     = useState(true);
   const [savedSigs, setSavedSigs]     = useState<SavedSignature[]>([]);
 
@@ -54,31 +82,35 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
 
   const generateTypedDataUrl = (text: string): string => {
     const canvas = document.createElement('canvas');
-    canvas.width = 600; canvas.height = 200;
+    canvas.width = 1600;
+    canvas.height = 400;
     const ctx = canvas.getContext('2d');
     if (!ctx) return '';
-    ctx.clearRect(0, 0, 600, 200);
-    ctx.font = `600 58px 'Dancing Script', cursive`;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.font = `600 88px '${selectedFont}', cursive`;
     ctx.fillStyle = penColor;
     ctx.textBaseline = 'middle';
     ctx.textAlign = 'center';
-    ctx.fillText(text, 300, 100);
-    return canvas.toDataURL('image/png');
+    ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+    return trimCanvas(canvas, 12);
   };
 
   const handleSaveAndSelect = () => {
     let dataUrl = ''; let label = 'Signature';
     if (activeTab === 'draw') {
       if (!sigPadRef.current || sigPadRef.current.isEmpty()) {
-        alert('Please draw a signature first.');
+        useToastStore.getState().showToast('Please draw a signature first', 'warning');
         return;
       }
-      dataUrl = sigPadRef.current.toDataURL('image/png');
-      label = 'Drawn';
+      dataUrl = trimCanvas(canvasRef.current!, 8);
+      label = sigLabel.trim() || 'Drawn Signature';
     } else if (activeTab === 'type') {
-      if (!typedText.trim()) { alert('Please enter your name.'); return; }
+      if (!typedText.trim()) {
+        useToastStore.getState().showToast('Please enter your name', 'warning');
+        return;
+      }
       dataUrl = generateTypedDataUrl(typedText);
-      label = `Typed: ${typedText}`;
+      label = sigLabel.trim() || `Typed: ${typedText}`;
     }
     if (dataUrl) {
       saveSignature({ type: activeTab as any, dataUrl, label, isDefault });
@@ -91,11 +123,13 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = (event) => {
-      const result = event.target?.result as string;
-      if (result) {
-        saveSignature({ type: 'upload', dataUrl: result, label: 'Uploaded', isDefault });
-        onSelectSignature(result, 'Uploaded signature');
+    reader.onload = async (event) => {
+      const rawResult = event.target?.result as string;
+      if (rawResult) {
+        const cleanResult = await processUploadedSignature(rawResult);
+        const label = sigLabel.trim() || 'Uploaded Signature';
+        saveSignature({ type: 'upload', dataUrl: cleanResult, label, isDefault });
+        onSelectSignature(cleanResult, label);
         onClose();
       }
     };
@@ -233,6 +267,20 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
                   ))}
                 </div>
               </div>
+
+              {/* Signature Name Input */}
+              <div>
+                <label className="block text-xs font-bold mb-1.5" style={{ color: 'var(--fg-muted)' }}>
+                  Signature Name <span className="font-normal opacity-70">(optional)</span>
+                </label>
+                <input
+                  type="text"
+                  value={sigLabel}
+                  onChange={(e) => setSigLabel(e.target.value)}
+                  className="input-organic h-9 text-xs"
+                  placeholder="e.g. My Formal Signature, Initial…"
+                />
+              </div>
             </div>
           )}
 
@@ -252,23 +300,39 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
                 />
               </div>
 
+              {/* Custom Redesigned Font Dropdown */}
+              <div>
+                <Dropdown
+                  label="Signature Font Style"
+                  value={selectedFont}
+                  onChange={(val) => setSelectedFont(String(val))}
+                  options={AVAILABLE_FONTS.map((f) => ({
+                    value: f.id,
+                    label: f.name,
+                    sublabel: f.style,
+                    group: f.group,
+                    fontFamily: f.id,
+                  }))}
+                />
+              </div>
+
               {/* Preview card */}
               <div>
                 <span className="block text-xs font-bold mb-2" style={{ color: 'var(--fg-muted)' }}>
-                  Preview — Dancing Script
+                  Preview — {selectedFont}
                 </span>
                 <div
-                  className="w-full p-5 rounded-[1.5rem] flex items-center justify-center"
+                  className="w-full p-5 rounded-[1.5rem] flex items-center justify-center overflow-hidden"
                   style={{
                     background: 'rgba(255,255,255,0.60)',
                     border: '2px solid rgba(93,112,82,0.20)',
                     boxShadow: 'inset 0 2px 10px rgba(44,44,36,0.05)',
-                    minHeight: 90,
+                    minHeight: 100,
                   }}
                 >
                   <span
-                    className="font-signature text-4xl"
-                    style={{ color: penColor, fontSize: 42, lineHeight: 1.2 }}
+                    className="text-center select-none"
+                    style={{ fontFamily: selectedFont, color: penColor, fontSize: 44, lineHeight: 1.2 }}
                   >
                     {typedText || 'Your Name'}
                   </span>
@@ -301,29 +365,44 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
 
           {/* ── Upload ───────────────────────────────────── */}
           {activeTab === 'upload' && (
-            <label
-              className="flex flex-col items-center justify-center gap-3 p-10 rounded-[1.5rem] cursor-pointer transition-all duration-300 hover:scale-[1.01]"
-              style={{
-                background: 'rgba(255,255,255,0.60)',
-                border: '2px dashed rgba(93,112,82,0.35)',
-                boxShadow: 'inset 0 2px 10px rgba(44,44,36,0.05)',
-              }}
-            >
-              <div
-                className="h-12 w-12 rounded-2xl flex items-center justify-center"
-                style={{ background: 'var(--moss-dim)' }}
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-bold mb-1.5" style={{ color: 'var(--fg-muted)' }}>
+                  Signature Name <span className="font-normal opacity-70">(optional)</span>
+                </label>
+                <input
+                  type="text"
+                  value={sigLabel}
+                  onChange={(e) => setSigLabel(e.target.value)}
+                  className="input-organic h-9 text-xs"
+                  placeholder="e.g. Uploaded Signature, Stamp…"
+                />
+              </div>
+
+              <label
+                className="flex flex-col items-center justify-center gap-3 p-8 rounded-[1.5rem] cursor-pointer transition-all duration-300 hover:scale-[1.01]"
+                style={{
+                  background: 'rgba(255,255,255,0.60)',
+                  border: '2px dashed rgba(93,112,82,0.35)',
+                  boxShadow: 'inset 0 2px 10px rgba(44,44,36,0.05)',
+                }}
               >
-                <Upload style={{ height: 22, width: 22, color: 'var(--moss)' }} />
-              </div>
-              <div className="text-center">
-                <p className="text-sm font-bold" style={{ color: 'var(--fg)' }}>Upload signature image</p>
-                <p className="text-xs mt-0.5" style={{ color: 'var(--fg-muted)' }}>
-                  PNG with transparent background works best
-                </p>
-              </div>
-              <span className="btn-ghost btn-sm">Browse File</span>
-              <input type="file" accept="image/png,image/jpeg" onChange={handleFileUpload} className="hidden" />
-            </label>
+                <div
+                  className="h-12 w-12 rounded-2xl flex items-center justify-center"
+                  style={{ background: 'var(--moss-dim)' }}
+                >
+                  <Upload style={{ height: 22, width: 22, color: 'var(--moss)' }} />
+                </div>
+                <div className="text-center">
+                  <p className="text-sm font-bold" style={{ color: 'var(--fg)' }}>Upload signature image</p>
+                  <p className="text-xs mt-0.5" style={{ color: 'var(--fg-muted)' }}>
+                    PNG with transparent background works best
+                  </p>
+                </div>
+                <span className="btn-ghost btn-sm">Browse File</span>
+                <input type="file" accept="image/png,image/jpeg" onChange={handleFileUpload} className="hidden" />
+              </label>
+            </div>
           )}
 
           {/* ── Saved ────────────────────────────────────── */}

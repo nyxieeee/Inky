@@ -1,342 +1,338 @@
-# E-Sign App — Project Plan
+# Inky — Project Plan (Client-Side Local E-Signature App)
 
 ## 1. Overview
-A simple, fast, personal e-signature web app: upload a document, sign it, download the signed PDF, and send it to others — or receive a document from someone else for signing. Built **web-first**, but designed **mobile/foldable-first** in layout since the primary user will mostly use a Samsung Galaxy Z Fold.
+**Inky** is a fast, elegant, privacy-first personal e-signature web app built around an organic "wabi-sabi paper" aesthetic. It enables users to upload documents, place signatures/text/dates, download flattened PDFs, manage multi-signer workflows, and receive inbound documents from external parties via scoped shareable links.
 
-**Primary user:** One person (single-user tool — no full multi-user accounts in v1).
+Built **100% client-side** (no external backend server required), Inky runs entirely within the browser using IndexedDB for PDF file storage and `localStorage` for document metadata, signature profiles, and inbound links. It is designed **mobile/foldable-first** to feel exceptional on devices like the Samsung Galaxy Z Fold (folded cover screen for queue triage, unfolded canvas for signing), while being fully responsive on standard smartphones, tablets, and desktop browsers.
+
+**Primary user:** One person (single-user personal tool — external parties interact solely through scoped shareable links without requiring accounts).
 
 **Core loop (outbound):**
-1. Upload a document (PDF, or image/DOCX converted to PDF) — or generate one with AI if he doesn't have one yet
-2. Place a signature (and optionally initials/date) on the document
-3. Download the signed PDF **and/or send it directly to the other party**
+1. Upload a PDF document.
+2. Place and resize signatures, text, dates, or initials with customizable professional or handwriting fonts.
+3. Export a flattened signed PDF and/or dispatch to multi-party signers.
 
 **Core loop (inbound):**
-1. Someone else sends him a document to sign (via a shareable upload link/inbox — no login required for the sender)
-2. It lands in his "to sign" queue
-3. He signs it and sends it back / downloads it
+1. Generate an **Inbox Link** with optional expiration and submission limits.
+2. External sender uploads a document via the inbound portal (no login required).
+3. Document lands in the user's "To Sign" queue for review and signing.
 
-## 2. Why it's more than "just an e-sig app"
-- **Reusable signature** — draw/type/upload once, saved locally, reused every time (no re-signing from scratch)
-- **Foldable-optimized UI** — cover screen shows pending/recent docs at a glance; unfolded screen is the full signing canvas
-- **Installable as a PWA** — adds a home-screen icon, works offline, feels like a native app
-- **Templates** — save signature/date field positions for document types he signs repeatedly
-- **Batch signing** — sign multiple documents in one session without re-uploading one at a time
-- **Recent documents list** — quick access without hunting through downloads
-- **Audit stamp** — embeds a timestamp note in the PDF metadata as lightweight proof of signing
-- **Multi-page thumbnail navigation** — jump straight to the signature page in long contracts
-- **AI document drafting** — if he doesn't have a document yet, describe what he needs (e.g. "simple NDA for a contractor") and get a draft PDF generated to review, edit, and sign
-- **Send to recipient** — deliver the signed document directly (email/link) instead of just downloading it
-- **Receive documents for signing** — others can send *him* a document via a shareable link, no account needed on their end
-- **Learns from usage** — over time, notices patterns in the documents he signs (recurring types, common signature/date placement, frequent recipients) and uses that to speed up future signing
+---
 
-## 3. Core Features (v1)
-| Feature | Description |
-|---|---|
-| Upload document | PDF upload (image/DOCX-to-PDF conversion as stretch goal) |
-| Signature capture | Draw (touch/mouse), type (styled font), or upload image |
-| Signature reuse | Save default signature locally, reuse across documents |
-| Placement | Drag-and-drop signature/initials/date, resizable |
-| Multi-page support | Thumbnail sidebar/strip to navigate pages |
-| Export | Download signed document as a flattened PDF |
-| Send to recipient | Deliver signed PDF directly (email or shareable link) — not just download |
-| Receive for signing | Shareable inbox link others can use to send him a document to sign, no login required for sender |
-| Recent documents | List of recently signed/in-progress documents |
-| Multi-signer tracking | A document can require signatures from more than one party; track who's signed, who hasn't, and notify each signer in turn |
+## 2. Key Product Highlights
+- **100% Local & Offline-First** — PDF binary files stay safely on-device in IndexedDB (`inky_db`); signatures, metadata, and links persist in `localStorage`. Zero reliance on a backend server.
+- **Reusable & Renamable Signatures** — Draw (pen canvas), Type (script/clean typography), or Upload (transparent PNG filtering). Rename signatures (e.g. "Formal", "Initials") and toggle a default signature for one-tap placement.
+- **Foldable & Mobile-Optimized** — Custom non-scrollable adaptive segmented tabs, compact cover-screen layout, and spacious unfolded canvas.
+- **Professional Document Typography** — Full support for formal document fonts (**Inter**, **Geist**, **Arial**, **Times New Roman**, **EB Garamond**) and expressive scripts (**Dancing Script**, **Caveat**, etc.) with matching embedded vector fonts in `pdf-lib`.
+- **Wabi-Sabi Paper & Ink Design** — Warm paper surfaces (`#FDFCF8`), deep loam typography (`#2C2C24`), earthy moss accents (`#5D7052`), glassmorphic panels, and custom organic pill dropdown menus (no browser OS `<select>` controls).
+- **Audit Verification & History** — Exported PDFs receive embedded timestamp metadata and SHA-256 cryptographic verification hashes viewable in Document History.
+- **Shareable Inbound Portal** — Create shareable links (`/inbox-submit/:token`) allowing external collaborators to upload documents directly into your queue without accounts.
+- **Multi-Signer Tracking** — Define signing order and recipient parties with status monitoring (Pending / Signed).
 
-## 4. Nice-to-Have Features (v2+)
-- **Document memory / learning** — the app tracks what kinds of documents he signs over time (type, field placement, recipients) and uses that history to auto-suggest field positions, pre-fill likely recipients, or surface relevant templates — essentially getting faster/smarter the more he uses it
-- **AI-assisted document generation** — describe the document needed in plain language, AI drafts a starting PDF (e.g. simple agreements, letters, forms) for him to review/edit before signing. Scope depends on what document types he actually needs — worth revisiting once that's clearer
-- Templates with pre-placed fields for recurring document types
-- Batch signing mode
-- PWA install + offline support
-- Audit trail / timestamp metadata embed
-- Optional watermark or "signed copy" stamp
-- Password-protect exported PDF
-- Dark mode
+---
 
-**Explicitly out of scope for now:** full multi-user accounts/login for other people to use the whole app themselves. Other people only ever interact with it as senders/recipients of a single document, not as full users.
+## 3. Core Features Matrix
 
-## 5. Design Priorities
-- **Mobile/foldable-first layout**: optimize for Z Fold's narrow cover screen (quick glance/actions) and near-square unfolded screen (full editing canvas); should also work fine on any standard phone, tablet, or desktop browser
-- **Minimal clicks**: signing a document he's signed before should take under 10 seconds
-- **Local-first where possible**: signature and recent docs stay on-device; a lightweight backend is needed for sending/receiving documents
-- **Touch-friendly**: large tap targets, easy drag-and-drop with a finger
-- **Distinctive, premium visual design** — no generic "vibe-coded" look: not stock Lucide icons used as-is, not default unstyled shadcn components, no template-feeling layouts. Custom/refined iconography, a deliberate color palette and type system, and purposeful motion rather than default component transitions
+| Feature | Description | Status |
+|---|---|---|
+| **Document Upload & View** | PDF upload with multi-page navigation, zoom, and thumbnail strip via `pdf.js` | Complete |
+| **Signature Studio** | Draw (touch/mouse), Type (custom typography), or Upload image with auto-transparency | Complete |
+| **Signature Management** | Inline renaming, label editing, default signature selection, and quick toolbar picker | Complete |
+| **Field Placement** | Drag-and-drop, resize, and positioning for Signatures, Text, Dates, and Names | Complete |
+| **Professional Typography** | Inter, Geist, Arial, Times New Roman, and EB Garamond with dynamic PDF font embedding | Complete |
+| **Client-Side Flattening** | `pdf-lib` merges signatures, text, and dates into a downloadable vector PDF in the browser | Complete |
+| **Custom Dropdown Menus** | Organic pill-style popover menus with grouped categories and typography previews | Complete |
+| **Foldable Responsiveness** | Adaptive non-scrollable segmented controls (`To Sign`, `Pending`, `Recent`) optimized for Z Fold | Complete |
+| **Inbound Drop Portal** | Scoped shareable upload links with configurable expiration and submission limits | Complete |
+| **Document History & Audit** | Audit log tracking signed documents, timestamps, and SHA-256 verification | Complete |
+| **Multi-Signer Workflow** | Multi-party assignment modal for sequencing signers and tracking completion | Complete |
 
-## 6. Suggested Tech Stack
-- **Frontend:** React + Tailwind (responsive, foldable-aware breakpoints)
-- **UI components:** shadcn/ui as a base, customized (colors, spacing, states) rather than used out-of-the-box, so it doesn't read as a template
-- **Motion:** Framer Motion for page transitions, drag-and-drop signature placement, and state changes (upload → sign → send), tuned to feel fluid and intentional rather than decorative
-- **Iconography:** custom or heavily restyled icon set instead of default Lucide icons, to avoid the generic look
-- **PDF handling:** `pdf-lib` or `pdf.js` for rendering + `pdf-lib` for flattening signatures into the PDF
-- **Signature capture:** `signature_pad` (canvas-based drawing) or custom canvas component
-- **Backend:** Lightweight API (Node/Express or serverless functions) for sending/receiving documents, generating shareable inbox links, and email delivery
-- **Storage:** Local storage / IndexedDB on-device for saved signature + recent docs; backend database + object storage (e.g. S3-compatible) for documents in transit (sent/received) and usage history
-- **AI drafting (v2):** LLM API call to generate a draft document from a plain-language description, converted to PDF for editing
-- **PWA:** Service worker + manifest for installability and offline use
+---
 
-## 7. Answered / Open Questions
-- [x] **Document types:** Mixed — both business and personal documents. No single vertical to optimize for, so field placement/templates need to stay flexible and general-purpose rather than tailored to one document type.
-- [x] **Inbox link behavior:** Unique link generated per request (not one permanent shared link) — each request gets its own token, so access can be scoped and expired per document rather than left open-ended.
-- [x] **Multi-signer:** Preferred — documents often need more than just his signature, so multi-signer tracking (who's signed, who hasn't, in what order) is a real v1 requirement, not a "later" feature.
+## 4. Design Priorities
+- **Mobile/Foldable-First Layout**: Tested and refined for Samsung Galaxy Z Fold's narrow cover screen (~280px–344px) and expanded tablet view. Zero horizontal overflow or scrollbar glitches.
+- **Minimal Clicks**: Signing a document with a saved default signature takes under 10 seconds.
+- **Organic Wabi-Sabi Aesthetic**: Cohesive paper and ink palette, custom pill controls, subtle wabi-sabi noise textures, and gentle Framer Motion transitions. No unstyled browser elements.
+- **Touch-Friendly Targets**: Generous tap targets, draggable handles, and smooth pinch/zoom controls.
 
-## 8. Suggested Build Order
-1. Upload + view PDF
-2. Draw/save signature, place on page, export signed PDF
-3. Mobile/foldable responsive polish
-4. Send to recipient (outbound)
-5. Receive documents (inbound link/inbox)
-6. Multi-signer flow (tracking + sequencing across signers)
-7. Recent documents list
-8. Templates
-9. PWA install + offline support
-10. Batch signing
+---
 
-## 9. System Architecture
+## 5. Technology Stack
+
+- **Core & Build:** React 18, TypeScript, Vite
+- **Styling:** Vanilla Tailwind CSS + Custom CSS Design System ([src/styles/theme.css](file:///c:/Users/Admin/Documents/Apps%20by%20Uno/Inky/src/styles/theme.css))
+- **Typography:** Google Fonts (`Philosopher`, `Inter`, `Geist`, `EB Garamond`, `Dancing Script`, `Caveat`, etc.)
+- **Motion & Micro-interactions:** Framer Motion
+- **Iconography:** Lucide React (refined and styled within organic badge containers)
+- **PDF Rendering:** `pdfjs-dist` (client-side PDF canvas rendering and page inspection)
+- **PDF Generation & Embedding:** `pdf-lib` (client-side PDF byte manipulation, signature stamping, font embedding)
+- **Signature Capture:** `signature_pad` + custom canvas smoothing and transparency filtering
+- **State Management:** Zustand (`useDocumentStore`, `useSignatureStore`, `useToastStore`, `useFoldableStore`, `useAuthStore`)
+- **Backend & Cloud Sync (Supabase):**
+  - **Auth**: Email Magic Link & Password authentication for the document owner.
+  - **Database (PostgreSQL)**: Documents, signature fields, saved signatures, and scoped inbox links with Row Level Security (RLS).
+  - **Storage**: Encrypted storage buckets for owner documents (`documents`) and accountless external uploads (`inbound`).
+- **Local Storage (Offline Fallback):**
+  - **IndexedDB (`inky_db`)**: Stores binary PDF buffers (original and signed PDFs).
+  - **`localStorage`**: Stores document metadata, saved signatures, inbound tokens, and app settings.
+
+---
+
+## 6. System Architecture
 
 ```mermaid
 flowchart TB
-    subgraph Client["Client (PWA) — React + Tailwind + shadcn/ui + Framer Motion"]
-        DV["Document Viewer/Editor (pdf.js)"]
-        SC["Signature Capture (canvas)"]
-        RQ["Recent / Inbox / Templates"]
-        LS[("Local storage / IndexedDB")]
+    subgraph Browser["Client Browser (Offline-Capable / Local-First)"]
+        subgraph UI["Presentation Layer (React + Tailwind + Framer Motion)"]
+            FL["FoldableLayout (Cover / Unfolded Responsive Shell)"]
+            DB["Dashboard (Adaptive Segmented Queue: To Sign / Pending / Recent)"]
+            PV["PdfViewer (pdf.js Canvas + Draggable Field Overlay + Font Picker)"]
+            SP["SignaturePadModal (Draw / Type / Upload / Renaming)"]
+            IP["InboundPortal (/inbox-submit/:token for External Uploads)"]
+            HV["HistoryView (Signed Documents & Audit Verifications)"]
+            AM["AuthModal (Email Magic Link / Password Sign-in)"]
+        end
+
+        subgraph State["State Management (Zustand)"]
+            UDS["useDocumentStore"]
+            USS["useSignatureStore"]
+            UTS["useToastStore"]
+            UFS["useFoldableStore"]
+            UAS["useAuthStore"]
+        end
+
+        subgraph Services["Client Services Layer"]
+            DOCS["documentService (PDF parsing, page count, sync)"]
+            SIGS["signatureService (save, delete, set default, rename)"]
+            INBS["inboxService (token generation, link validation, inbound receive)"]
+            DELS["deliveryService (multi-signer tracking)"]
+            PDFL["pdf.ts (pdf-lib signature flattening & font embedding)"]
+        end
+
+        subgraph Storage["On-Device Local Storage (Offline Fallback)"]
+            IDB[("IndexedDB: inky_db\n(Binary PDF Buffers)")]
+            LST[("localStorage\n(Documents, Signatures, Links)")]
+        end
     end
 
-    subgraph Backend["Backend API"]
-        DS["Document Service (upload, convert, store)"]
-        SS["Signing Service (flatten signature into PDF)"]
-        SH["Sharing / Inbox Service (links, inbound uploads)"]
-        NS["Notification Service (email)"]
-        AI["AI Drafting Service (v2, LLM)"]
+    subgraph Cloud["Supabase Cloud Sync (Multi-Device & Inbound Relay)"]
+        SA["Supabase Auth\n(Magic Link / Password)"]
+        SDB[("PostgreSQL Database\n(documents, signature_fields, inbox_links, saved_signatures)")]
+        SSB[("Supabase Storage\n('documents' & 'inbound' buckets)")]
     end
 
-    DB[("Database (docs, users, history)")]
-    OS[("Object Storage (PDF files)")]
-    EM[["Email / Link provider"]]
-
-    Client -- "HTTPS (REST/JSON)" --> Backend
-    DS --> DB
-    DS --> OS
-    SS --> OS
-    SH --> DB
-    SH --> EM
-    NS --> EM
+    UI --> State
+    State --> Services
+    Services --> Storage
+    Services <--> Cloud
+    PDFL --> IDB
 ```
 
-## 10. Data Flow Diagram (DFD)
+---
 
-**Level 0 (context):**
+## 7. Data Flow Diagram (DFD)
 
+### Level 0 — Context
 ```mermaid
 flowchart LR
-    Boss(["Boss"])
-    Recipient(["Recipient"])
+    User(["Primary User"])
     Sender(["External Sender"])
-    App["E-Sign App"]
+    Inky["Inky App (Local Client)"]
 
-    Boss -- "uploads / signs / sends" --> App
-    App -- "sends signed doc" --> Recipient
-    Sender -- "uploads doc to inbox" --> App
-    App -- "notifies" --> Boss
+    User -- "Uploads PDF, signs, exports" --> Inky
+    Inky -- "Downloads signed PDF with audit hash" --> User
+    User -- "Shares Inbox Link" --> Sender
+    Sender -- "Uploads document (no account needed)" --> Inky
+    Inky -- "Places document into To Sign queue" --> User
 ```
 
-**Level 1 (major processes):**
-
+### Level 1 — Major Local Processes
 ```mermaid
 flowchart TB
-    Boss(["Boss"])
+    User(["Primary User"])
     Sender(["External Sender"])
-    Recipient(["Recipient (email/link)"])
 
-    P1["P1: Document Intake"]
-    P2["P2: Signature Capture"]
-    P3["P3: Sign & Place Fields"]
-    P4["P4: Delivery Service"]
-    P5["P5: Inbound Intake"]
+    P1["P1: Document Intake\n(PDF Upload / Inbound Drop)"]
+    P2["P2: Signature Studio\n(Draw / Type / Upload / Rename)"]
+    P3["P3: Document Stamping & Flattening\n(pdf-lib embedding)"]
+    P4["P4: Link Generation\n(inboxService)"]
 
-    D1[("Store: Documents")]
-    D2[("Store: Saved Signature")]
-    D3[("Store: Documents — signed")]
-    D4[("Store: Documents — pending")]
-    D5[("Store: Usage History")]
+    S1[("IndexedDB: PDF File Bytes")]
+    S2[("localStorage: Document Metadata")]
+    S3[("localStorage: Saved Signatures")]
+    S4[("localStorage: Inbound Links")]
 
-    Boss -- "(1) Upload Doc" --> P1 --> D1
-    Boss -- "(2) Draw/Select Signature" --> P2 --> D2
-    D1 --> P3
-    D2 --> P3
-    P3 --> D3
-    P3 -- "(3a) Download" --> Boss
-    P3 -- "(3b) Send" --> P4 --> Recipient
-    Sender -- "(4) Upload via inbox link" --> P5 --> D4
-    P5 -- "notify" --> Boss --> P3
+    User -- "Uploads PDF" --> P1
+    Sender -- "Submits PDF via link" --> P1
+    P1 --> S1
+    P1 --> S2
 
-    P1 -.-> D5
-    P3 -.-> D5
-    D5 -.-> P1
-    D5 -.-> P3
+    User -- "Draws/Types/Names Signature" --> P2
+    P2 --> S3
+
+    S1 --> P3
+    S2 --> P3
+    S3 --> P3
+    P3 -- "Generates Flattened PDF & Hash" --> User
+
+    User -- "Configures Link (Expires / Max Uses)" --> P4
+    P4 --> S4
 ```
 
-## 11. Entity Relationship Diagram (ERD)
+---
+
+## 8. Entity Relationship Model (Local Schema)
 
 ```mermaid
 erDiagram
-    USER ||--o{ DOCUMENT : owns
-    USER ||--|| SIGNATURE : has
-    USER ||--o{ INBOX_LINK : owns
-    USER ||--o{ TEMPLATE : owns
     DOCUMENT ||--o{ SIGNATURE_FIELD : contains
-    DOCUMENT ||--o{ RECIPIENT : "sent to"
-    DOCUMENT ||--o{ USAGE_HISTORY : logs
+    DOCUMENT ||--o{ RECIPIENT : tracks
+    DOCUMENT ||--o| AUDIT_RECORD : verifies
+    SIGNATURE_PROFILE ||--o{ SIGNATURE_FIELD : applies_to
+    INBOX_LINK ||--o{ DOCUMENT : receives
 
-    USER {
-        string id PK
-        string name
-        string email
-        datetime created_at
-    }
     DOCUMENT {
         string id PK
-        string owner_id FK
         string title
-        string status "draft/pending/partially_signed/signed/sent"
-        string source "uploaded/ai/inbound"
-        string file_path
-        datetime created_at
-        datetime updated_at
+        string originalFileName
+        int pageCount
+        string status "draft / pending / completed"
+        string source "uploaded / inbound"
+        string senderName
+        string senderEmail
+        string createdAt
+        string updatedAt
     }
-    SIGNATURE {
+
+    SIGNATURE_PROFILE {
         string id PK
-        string user_id FK
-        string image_data_path
-        bool is_default
-        datetime created_at
+        string label "e.g. Formal, Initials, Stamp"
+        string type "draw / type / upload"
+        string dataUrl
+        bool isDefault
+        string createdAt
     }
+
     SIGNATURE_FIELD {
         string id PK
-        string document_id FK
-        int page_number
-        float x
-        float y
-        float width
-        float height
-        string field_type "signature/initials/date"
+        string documentId FK
+        int pageNumber
+        float x "percentage"
+        float y "percentage"
+        float width "percentage"
+        float height "percentage"
+        string fieldType "signature / text / date / name"
         string value
+        string fontFamily "Inter / Geist / Times New Roman / etc."
+        bool required
     }
-    RECIPIENT {
-        string id PK
-        string document_id FK
-        string email
-        int signing_order
-        string status "pending/signed/viewed/declined"
-        datetime signed_at
-    }
+
     INBOX_LINK {
         string id PK
-        string owner_id FK
         string token
-        datetime expires_at
-        datetime created_at
+        string title
+        string note
+        int expiresHours
+        int maxUses
+        int currentUses
+        string createdAt
     }
-    TEMPLATE {
+
+    RECIPIENT {
         string id PK
-        string owner_id FK
+        string documentId FK
         string name
-        string document_type
-        json field_layout
+        string email
+        string role "signer / cc"
+        int signingOrder
+        string status "pending / signed"
     }
-    USAGE_HISTORY {
-        string id PK
-        string document_id FK
-        string document_type
-        string recipient_email
-        json field_layout
-        datetime created_at
+
+    AUDIT_RECORD {
+        string documentId PK
+        string signedAt
+        string integrityHash "SHA-256"
+        int signatureCount
     }
 ```
 
-## 12. User Stories
+---
 
-**Signing (outbound)**
-- As the primary user, I want to upload a PDF so that I can sign it.
-- As the primary user, I want to draw/type/upload my signature once and reuse it, so I don't redraw it every time.
-- As the primary user, I want to drag my signature onto the exact spot on the page, so it looks correct on the final document.
-- As the primary user, I want to download the signed PDF, so I have a copy for my records.
-- As the primary user, I want to send the signed PDF directly to someone's email, so I don't have to leave the app to send it.
-- As the primary user, I want to add multiple signers to a document and set the signing order, so multi-party documents get routed correctly.
-- As the primary user, I want to see the status of each signer (pending/signed/declined), so I know who's holding up a document.
+## 9. User Stories & Acceptance Criteria
 
-**Receiving (inbound)**
-- As the primary user, I want a unique link generated for each signing request, so access can be scoped and expired per document rather than shared indefinitely.
-- As an external sender, I want to upload a document via a link without creating an account, so I can quickly get something signed.
-- As the primary user, I want to see incoming documents in a "to sign" queue, so I know what's waiting on me.
-- As a signer other than the primary user, I want to be notified when it's my turn to sign in a multi-signer document, so I don't have to check manually.
+### Signing (Outbound)
+- **Upload PDF**: As a user, I want to drag and drop or browse for a PDF document so I can begin signing immediately.
+- **Custom Signature Naming**: As a user, I want to give names to my signatures (e.g. "My Formal Signature") and rename them inline anytime from the Saved Signatures screen.
+- **Font Styling**: As a user, I want to select professional fonts (Inter, Geist, Times New Roman, Arial, EB Garamond) for typed signatures and text fields so my document looks authoritative.
+- **Field Placement**: As a user, I want to place signatures, text, dates, and initials freely on any page with draggable and resizable handles.
+- **Download Flattened PDF**: As a user, I want to export a finalized PDF where signatures and text are permanently embedded and can be opened in any PDF viewer.
 
-**Efficiency / personalization**
-- As the primary user, I want the app to remember common document types and field placements, so signing gets faster over time.
-- As the primary user, I want to save a template for a document type I sign often, so fields are pre-placed next time.
-- As the primary user, I want to sign multiple documents in one session (batch), so I don't repeat the same steps for each one.
-- As the primary user, I want to generate a simple document with AI if I don't have one yet, so I don't need a separate tool.
+### Inbound (Receiving)
+- **Generate Inbox Link**: As a user, I want to create a shareable link with optional expiration (24h to 30d) and submission limits so external senders can drop documents to me.
+- **Accountless External Upload**: As an external sender, I want to open an inbound link on my mobile phone or desktop and upload a PDF without signing up for an account.
+- **Queue Notification**: As a user, I want inbound files to land directly in my "To Sign" queue tagged with an "Inbound" badge.
 
-**Mobile/foldable**
-- As the primary user, I want to glance at pending documents from my cover screen, so I can triage quickly without unfolding my phone.
-- As the primary user, I want the full signing experience on the unfolded screen, so I have enough space to place things precisely.
-- As the primary user, I want to install the app to my home screen, so it feels like a native app and works offline.
+### Device & Mobile Experience
+- **Foldable Screen Support**: As a Samsung Galaxy Z Fold user, I want the queue tabs (`To Sign`, `Pending`, `Recent`) to fit cleanly without horizontal scrolling on my narrow cover screen, and expand gracefully when unfolded.
+- **Custom Dropdowns**: As a user, I want dropdowns to match Inky's paper and moss theme rather than opening raw browser/OS blue selection boxes.
 
-## 13. Project Architecture (Folder/File Structure)
+---
+
+## 10. Actual Project Codebase Structure
 
 ```
-esign-app/
-├── apps/
-│   ├── web/                        # Frontend (React + Vite/Next)
-│   │   ├── public/
-│   │   │   ├── manifest.json       # PWA manifest
-│   │   │   └── icons/              # Custom app icons (not default Lucide set)
-│   │   ├── src/
-│   │   │   ├── app/                # Routes/pages
-│   │   │   │   ├── home/
-│   │   │   │   ├── inbox/          # Incoming documents queue
-│   │   │   │   ├── sign/[docId]/   # Signing/editor view
-│   │   │   │   ├── templates/
-│   │   │   │   └── settings/
-│   │   │   ├── components/
-│   │   │   │   ├── ui/             # shadcn/ui base components, customized
-│   │   │   │   ├── document/       # PDF viewer, page thumbnails
-│   │   │   │   ├── signature/      # Signature pad, saved signature picker
-│   │   │   │   └── motion/         # Shared Framer Motion variants/transitions
-│   │   │   ├── hooks/
-│   │   │   ├── lib/
-│   │   │   │   ├── pdf.ts          # pdf.js / pdf-lib helpers
-│   │   │   │   ├── storage.ts      # IndexedDB / local storage helpers
-│   │   │   │   └── api.ts          # API client
-│   │   │   ├── styles/
-│   │   │   │   └── theme.css       # Custom color palette, type system
-│   │   │   └── main.tsx
-│   │   └── package.json
-│   │
-│   └── api/                        # Backend
-│       ├── src/
-│       │   ├── routes/
-│       │   │   ├── documents.ts
-│       │   │   ├── signatures.ts
-│       │   │   ├── inbox.ts        # Inbound link + upload handling
-│       │   │   ├── delivery.ts     # Send signed doc to recipient
-│       │   │   └── ai-draft.ts     # v2: AI document generation
-│       │   ├── services/
-│       │   │   ├── documentService.ts
-│       │   │   ├── signingService.ts   # Flatten signature into PDF
-│       │   │   ├── sharingService.ts   # Generate/validate inbox links
-│       │   │   ├── notificationService.ts  # Email sending
-│       │   │   └── historyService.ts   # Usage history + suggestions
-│       │   ├── models/             # DB models (User, Document, SignatureField, Recipient, Template, InboxLink, UsageHistory)
-│       │   ├── storage/            # Object storage client (PDF files)
-│       │   └── server.ts
-│       └── package.json
+Inky/
+├── index.html                      # HTML root, Google Fonts (Philosopher, Inter, Geist, Garamond, scripts)
+├── package.json                    # Client dependencies (React, Vite, pdf-lib, pdfjs-dist, lucide-react)
+├── vite.config.ts                  # Vite build config with path aliases (@/)
+├── tailwind.config.js              # Tailwind custom colors & typography tokens
+├── esign-app-plan.md               # Architecture and project plan
 │
-├── packages/
-│   └── shared/                     # Shared types/constants between web + api
-│       └── types.ts
-│
-├── esign-app-plan.md                # This plan
-└── README.md
+└── src/
+    ├── main.tsx                    # App entry point
+    ├── App.tsx                     # Top-level coordinator, tab router, modal orchestration
+    ├── types.ts                    # Shared TypeScript interfaces (Document, SignatureField, InboxLink, etc.)
+    ├── utils.ts                    # Canvas trimming, blob downloads, file helpers
+    │
+    ├── components/
+    │   ├── FoldableLayout.tsx      # Responsive header, desktop sidebar, mobile bottom nav, ambient blobs
+    │   ├── Dashboard.tsx           # Document queue, search, non-scrollable segmented tabs (To Sign/Pending/Recent)
+    │   ├── PdfViewer.tsx           # PDF canvas renderer, toolbar, font picker, field overlay, export
+    │   ├── HistoryView.tsx         # Exported signed documents, timestamps, and audit verification
+    │   ├── InboundPortal.tsx       # Public portal route for external document upload (/inbox-submit/:token)
+    │   ├── MultiSignerPanel.tsx    # Multi-party signing assignment and tracking modal
+    │   ├── Toast.tsx               # Custom floating notification toasts
+    │   │
+    │   ├── ui/
+    │   │   └── Dropdown.tsx        # Organic pill trigger, Framer Motion menu, grouped typography previews
+    │   │
+    │   └── modals/
+    │       ├── SignaturePadModal.tsx # Draw/Type/Upload/Saved signature studio with naming inputs
+    │       ├── ShareInboxModal.tsx   # Custom dropdown-powered inbound link generator
+    │       ├── ConfirmModal.tsx      # Wabi-sabi confirmation dialog (no native browser alerts)
+    │       └── AuthModal.tsx         # Supabase cloud sync sign-in / magic link modal
+    │
+    ├── lib/
+    │   ├── pdf.ts                  # pdf-lib flattening, standard PDF font embedding, client-side signature stamp
+    │   ├── storage.ts              # IndexedDB binary store (pdf_files) & localStorage metadata store
+    │   └── supabase.ts             # Supabase client initialization with graceful fallback
+    │
+    ├── services/
+    │   ├── documentService.ts      # Document upload, page inspection, canvas URL generation, signed download
+    │   ├── signatureService.ts     # CRUD for signatures, default toggling, inline renaming
+    │   ├── inboxService.ts         # Inbound link creation, validation, and submission processing
+    │   └── deliveryService.ts      # Multi-signer workflow management
+    │
+    ├── store/
+    │   ├── useDocumentStore.ts     # Document list, active document, signing state
+    │   ├── useSignatureStore.ts    # Saved signatures list, default signature, rename action
+    │   ├── useToastStore.ts        # Global toast notifications
+    │   ├── useFoldableStore.ts     # Viewport tracking for foldable/responsive layouts
+    │   └── useAuthStore.ts         # Supabase authentication session & user profile store
+    │
+    └── styles/
+        └── theme.css               # Design system: paper colors, moss buttons, badges, scrollbars, animations
+├── supabase/
+│   └── schema.sql                  # PostgreSQL tables, RLS policies, storage bucket rules
+└── .env.example                    # Supabase URL & Anon Key example configuration
 ```

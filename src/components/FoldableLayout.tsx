@@ -5,7 +5,10 @@ import {
   PenTool,
   PlusCircle,
   History,
+  Share2,
+  Cloud,
 } from 'lucide-react';
+import { useAuthStore } from '../store/useAuthStore';
 
 interface FoldableLayoutProps {
   children: React.ReactNode;
@@ -31,6 +34,7 @@ export const FoldableLayout: React.FC<FoldableLayoutProps> = ({
   onUploadClick,
   onGenerateInboxClick,
 }) => {
+  const { user, openAuthModal } = useAuthStore();
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
 
   useEffect(() => {
@@ -101,13 +105,37 @@ export const FoldableLayout: React.FC<FoldableLayoutProps> = ({
 
           {/* Action buttons */}
           <div className="flex items-center gap-2">
+            {/* Account / Cloud Sync Pill */}
+            <button
+              onClick={openAuthModal}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-all hover:scale-105"
+              style={{
+                background: user ? 'var(--moss-dim)' : 'rgba(255,255,255,0.60)',
+                color: user ? 'var(--moss)' : 'var(--fg-muted)',
+                border: '1px solid var(--border)',
+              }}
+              title={user ? `Signed in as ${user.email}` : 'Sign in to sync across devices'}
+            >
+              {user ? (
+                <>
+                  <span className="h-2 w-2 rounded-full bg-[var(--moss)] animate-pulse" />
+                  <span className="hidden md:inline max-w-[100px] truncate">{user.email?.split('@')[0]}</span>
+                </>
+              ) : (
+                <>
+                  <Cloud style={{ height: 13, width: 13 }} />
+                  <span className="hidden sm:inline">Sync</span>
+                </>
+              )}
+            </button>
+
             <button
               onClick={onGenerateInboxClick}
               className="btn-ghost btn-sm"
               aria-label="Create inbox link"
             >
-              <Inbox style={{ height: 14, width: 14 }} />
-              <span className="hidden sm:inline">Inbox</span>
+              <Share2 style={{ height: 14, width: 14 }} />
+              <span className="hidden sm:inline">Inbox Link</span>
             </button>
             <button
               onClick={onUploadClick}
@@ -146,7 +174,7 @@ export const FoldableLayout: React.FC<FoldableLayoutProps> = ({
         </nav>
 
         {/* Main content */}
-        <main className="flex-1 px-4 py-4 sm:px-6 sm:py-6 overflow-auto">
+        <main className="flex-1 px-3 sm:px-6 py-4 sm:py-6 overflow-y-auto overflow-x-hidden">
           {children}
         </main>
       </div>

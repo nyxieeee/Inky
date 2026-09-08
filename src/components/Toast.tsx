@@ -5,10 +5,17 @@ import { useToastStore } from '../store/useToastStore';
 import type { ToastType } from '../types';
 
 const iconMap: Record<ToastType, React.ReactNode> = {
-  success: <CheckCircle2 size={16} className="text-emerald-500" />,
-  error: <XCircle size={16} className="text-rose-500" />,
-  warning: <AlertTriangle size={16} className="text-amber-500" />,
-  info: <Info size={16} className="text-sky-500" />,
+  success: <CheckCircle2 size={16} style={{ color: 'var(--moss)' }} />,
+  error:   <XCircle size={16} style={{ color: '#A85448' }} />,
+  warning: <AlertTriangle size={16} style={{ color: 'var(--terracotta)' }} />,
+  info:    <Info size={16} style={{ color: 'var(--moss)' }} />,
+};
+
+const badgeBgMap: Record<ToastType, string> = {
+  success: 'var(--moss-dim)',
+  error:   'rgba(168,84,72,0.14)',
+  warning: 'var(--clay-dim)',
+  info:    'var(--moss-dim)',
 };
 
 export default function Toast() {
@@ -16,7 +23,7 @@ export default function Toast() {
   const removeToast = useToastStore((s) => s.removeToast);
 
   return (
-    <div className="fixed bottom-5 right-5 z-[9999] flex flex-col gap-2 max-w-sm w-full pointer-events-none px-4">
+    <div className="fixed bottom-6 right-6 z-[9999] flex flex-col gap-2.5 max-w-sm w-full pointer-events-none px-4">
       <AnimatePresence>
         {toasts.map((t) => (
           <motion.div
@@ -25,15 +32,24 @@ export default function Toast() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 10, scale: 0.95 }}
             transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
-            className="pointer-events-auto flex items-center gap-3 p-3.5 rounded-xl border border-border/80 bg-card/95 backdrop-blur-md shadow-lg text-foreground"
+            className="pointer-events-auto flex items-center gap-3 px-4 py-3 rounded-[1.75rem]"
+            style={{
+              background: 'var(--surface)',
+              border: '1.5px solid var(--border)',
+              boxShadow: '0 16px 40px -6px rgba(44,44,36,0.25), 0 4px 16px -2px rgba(93,112,82,0.12)',
+              color: 'var(--fg)',
+            }}
           >
-            <div className="flex items-center flex-shrink-0">
+            <div
+              className="h-8 w-8 rounded-full flex items-center justify-center shrink-0"
+              style={{ background: badgeBgMap[t.type] }}
+            >
               {iconMap[t.type]}
             </div>
-            <span className="flex-1 text-xs font-medium leading-relaxed">{t.msg}</span>
+            <span className="flex-1 text-xs font-bold leading-relaxed">{t.msg}</span>
             {t.action && (
               <button
-                className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-primary text-primary-foreground hover:opacity-90 transition-opacity flex-shrink-0"
+                className="btn-primary btn-sm text-[11px] px-3 py-1 shrink-0"
                 onClick={() => {
                   t.action!.onClick();
                   removeToast(t.id);
@@ -43,10 +59,12 @@ export default function Toast() {
               </button>
             )}
             <button
-              className="p-1 text-muted-foreground hover:text-foreground transition-colors"
+              className="h-7 w-7 rounded-full flex items-center justify-center transition-all hover:scale-110 shrink-0"
+              style={{ background: 'var(--bg-stone)', color: 'var(--fg-muted)' }}
               onClick={() => removeToast(t.id)}
+              aria-label="Dismiss toast"
             >
-              <X size={14} />
+              <X size={13} />
             </button>
           </motion.div>
         ))}

@@ -4,6 +4,7 @@ import { Dashboard } from './components/Dashboard';
 import { PdfViewer } from './components/PdfViewer';
 import { MultiSignerPanel } from './components/MultiSignerPanel';
 import { InboundPortal } from './components/InboundPortal';
+import { SignerPortal } from './components/SignerPortal';
 import { HistoryView } from './components/HistoryView';
 import Toast from './components/Toast';
 
@@ -11,19 +12,21 @@ import Toast from './components/Toast';
 import { SignaturePadModal } from './components/modals/SignaturePadModal';
 import { ShareInboxModal } from './components/modals/ShareInboxModal';
 import { ConfirmModal } from './components/modals/ConfirmModal';
+import { AuthModal } from './components/modals/AuthModal';
 
 // Stores & Services
 import { useDocumentStore } from './store/useDocumentStore';
 import { useSignatureStore } from './store/useSignatureStore';
 import { useToastStore } from './store/useToastStore';
 import { useFoldableStore } from './store/useFoldableStore';
+import { useAuthStore } from './store/useAuthStore';
 import { inboxService } from './services/inboxService';
 import { InboxLink } from './types';
 
 // Icons
 import {
   PenTool, Trash2, ArrowLeft, PlusCircle,
-  Inbox, Leaf, Copy, Check,
+  Inbox, Leaf, Copy, Check, Pencil, X,
 } from 'lucide-react';
 
 export function App() {
@@ -50,10 +53,13 @@ export function App() {
     openSignatureModal,
     closeSignatureModal,
     removeSignature,
+    makeDefault,
+    renameSignature,
   } = useSignatureStore();
 
   const { showToast } = useToastStore();
   const updateDimensions = useFoldableStore((s) => s.updateDimensions);
+  const { isAuthModalOpen, closeAuthModal, initializeAuth } = useAuthStore();
 
   // Modals & Local UI state
   const [targetFieldId, setTargetFieldId] = useState<string | undefined>(undefined);
@@ -61,10 +67,34 @@ export function App() {
   const [isShareInboxOpen, setIsShareInboxOpen] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
-  // Inbound portal route detection
+  // Saved Signatures renaming state
+  const [editingSigId, setEditingSigId] = useState<string | null>(null);
+  const [editingSigLabel, setEditingSigLabel] = useState<string>('');
+
+  const startRenamingSig = (sig: { id: string; label: string }) => {
+    setEditingSigId(sig.id);
+    setEditingSigLabel(sig.label || 'My Signature');
+  };
+
+  const handleSaveRenameSig = (id: string) => {
+    if (editingSigLabel.trim()) {
+      renameSignature(id, editingSigLabel.trim());
+    }
+    setEditingSigId(null);
+  };
+
+  const handleCancelRenameSig = () => {
+    setEditingSigId(null);
+  };
+
+  // Public portal route detection (Inbound submission + Signer portal)
   const pathname = window.location.pathname;
   const isInboxRoute = pathname.startsWith('/inbox-submit/');
   const inboundToken = isInboxRoute ? pathname.split('/inbox-submit/')[1] : null;
+
+  const isSignRoute = pathname.startsWith('/sign/');
+  const signToken = isSignRoute ? pathname.split('/sign/')[1] : null;
+  const isPublicRoute = isInboxRoute || isSignRoute;
 
   // Inbox links list
   const [inboxLinks, setInboxLinks] = useState<InboxLink[]>([]);
@@ -80,12 +110,13 @@ export function App() {
 
   // Initial load
   useEffect(() => {
-    if (!isInboxRoute) {
+    if (!isPublicRoute) {
+      initializeAuth();
       fetchDocuments();
       loadSignatures();
       loadInboxLinks();
     }
-  }, [isInboxRoute]);
+  }, [isPublicRoute]);
 
   const loadInboxLinks = async () => {
     try {
@@ -98,6 +129,10 @@ export function App() {
 
   if (isInboxRoute && inboundToken) {
     return <InboundPortal token={inboundToken} />;
+  }
+
+  if (isSignRoute && signToken) {
+    return <SignerPortal token={signToken} />;
   }
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -114,9 +149,25 @@ export function App() {
 
   const handleSelectSignatureFromModal = (dataUrl: string) => {
     if (targetFieldId) {
-      setFields((prev) =>
-        prev.map((f) => (f.id === targetFieldId ? { ...f, value: dataUrl } : f))
-      );
+      const img = new Image();
+      img.onload = () => {
+        const aspect = img.naturalWidth / (img.naturalHeight || 1);
+        const targetHeight = 7.5;
+        const targetWidth = Math.min(50, Math.max(12, targetHeight * 1.4 * aspect));
+        setFields((prev) =>
+          prev.map((f) =>
+            f.id === targetFieldId
+              ? {
+                  ...f,
+                  value: dataUrl,
+                  width: Math.round(targetWidth * 10) / 10,
+                  height: targetHeight,
+                }
+              : f
+          )
+        );
+      };
+      img.src = dataUrl;
     }
     closeSignatureModal();
     loadSignatures();
@@ -182,7 +233,7 @@ export function App() {
 
           <PdfViewer
             documentId={selectedDoc.id}
-            pdfUrl={`/api/documents/${selectedDoc.id}/file`}
+            pdfUrl={selectedDoc.filePath}
             fields={fields}
             setFields={setFields as any}
             onOpenSignatureModal={handleOpenSigModal}
@@ -236,18 +287,78 @@ export function App() {
                   <div className="h-24 rounded-[1.25rem] flex items-center justify-center p-3 bg-white/70 dark:bg-card/70 border border-dashed border-border">
                     <img src={sig.dataUrl} alt={sig.label} className="h-full max-w-full object-contain" />
                   </div>
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <span className="text-xs font-bold block text-foreground">{sig.label}</span>
-                      {sig.isDefault && <span className="badge-moss text-[10px] mt-0.5">Default</span>}
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex-1 min-w-0">
+                      {editingSigId === sig.id ? (
+                        <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="text"
+                            value={editingSigLabel}
+                            onChange={(e) => setEditingSigLabel(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') handleSaveRenameSig(sig.id);
+                              if (e.key === 'Escape') handleCancelRenameSig();
+                            }}
+                            className="input-organic h-8 px-2.5 text-xs font-bold w-full max-w-[170px]"
+                            autoFocus
+                            placeholder="Signature name…"
+                          />
+                          <button
+                            onClick={() => handleSaveRenameSig(sig.id)}
+                            className="h-7 w-7 rounded-full flex items-center justify-center bg-[var(--moss)] text-white hover:scale-105 transition-transform shrink-0"
+                            title="Save name"
+                          >
+                            <Check size={13} />
+                          </button>
+                          <button
+                            onClick={handleCancelRenameSig}
+                            className="h-7 w-7 rounded-full flex items-center justify-center bg-[var(--bg-stone)] text-[var(--fg-muted)] hover:scale-105 transition-transform shrink-0"
+                            title="Cancel"
+                          >
+                            <X size={13} />
+                          </button>
+                        </div>
+                      ) : (
+                        <div
+                          className="flex items-center gap-1.5 group/edit cursor-pointer"
+                          onClick={() => startRenamingSig(sig)}
+                        >
+                          <span className="text-xs font-bold truncate text-foreground group-hover/edit:text-[var(--moss)] transition-colors">
+                            {sig.label}
+                          </span>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              startRenamingSig(sig);
+                            }}
+                            className="p-1 rounded-lg text-[var(--fg-muted)] hover:text-[var(--moss)] hover:bg-[var(--moss-dim)] transition-all"
+                            title="Rename signature"
+                            aria-label="Rename signature"
+                          >
+                            <Pencil size={12} />
+                          </button>
+                          {sig.isDefault && <span className="badge-moss text-[10px]">Default</span>}
+                        </div>
+                      )}
                     </div>
-                    <button
-                      onClick={() => removeSignature(sig.id)}
-                      className="p-2 rounded-xl text-rose-500 hover:scale-110 transition-transform"
-                      title="Delete signature"
-                    >
-                      <Trash2 size={15} />
-                    </button>
+                    <div className="flex items-center gap-1 shrink-0">
+                      {!sig.isDefault && (
+                        <button
+                          onClick={() => makeDefault(sig.id)}
+                          className="px-2.5 py-1 rounded-full text-[10px] font-bold text-[var(--moss)] hover:bg-[var(--moss-dim)] transition-colors"
+                          title="Set as default signature"
+                        >
+                          Set Default
+                        </button>
+                      )}
+                      <button
+                        onClick={() => removeSignature(sig.id)}
+                        className="p-2 rounded-xl text-rose-500 hover:scale-110 transition-transform"
+                        title="Delete signature"
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                    </div>
                   </div>
                 </div>
               ))
@@ -372,6 +483,11 @@ export function App() {
           }
         }}
         onCancel={() => setConfirmDeleteId(null)}
+      />
+
+      <AuthModal
+        isOpen={isAuthModalOpen}
+        onClose={closeAuthModal}
       />
 
       <Toast />

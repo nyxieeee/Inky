@@ -1,8 +1,178 @@
-import { SavedSignature } from '../types';
+import { SavedSignature, Document, SignatureField, Recipient, InboxLink } from '../types';
 
 const SIGNATURES_KEY = 'esign_saved_signatures';
 const DEFAULT_SIG_KEY = 'esign_default_signature_id';
+const DOCUMENTS_KEY = 'inky_local_documents';
+const INBOX_LINKS_KEY = 'inky_local_inbox_links';
+const DB_NAME = 'inky_db';
+const STORE_NAME = 'pdf_files';
 
+// ── IndexedDB Helper for Local PDF Binary Storage ──────────────────────────
+function openDb(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, 1);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(STORE_NAME)) {
+        db.createObjectStore(STORE_NAME);
+      }
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+export async function storePdfBytes(id: string, bytes: Uint8Array): Promise<void> {
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    const store = tx.objectStore(STORE_NAME);
+    // Store both under plain id and original_id
+    store.put(bytes, `original_${id}`);
+    store.put(bytes, id);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+export async function getOriginalPdfBytes(id: string): Promise<Uint8Array | null> {
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readonly');
+    const store = tx.objectStore(STORE_NAME);
+    const req = store.get(`original_${id}`);
+    req.onsuccess = () => {
+      if (req.result) {
+        resolve(req.result);
+      } else {
+        // Fallback to plain id if original_id wasn't saved yet
+        const reqFallback = store.get(id);
+        reqFallback.onsuccess = () => resolve(reqFallback.result || null);
+        reqFallback.onerror = () => resolve(null);
+      }
+    };
+    req.onerror = () => reject(req.error);
+  });
+}
+
+export async function getLocalPdfBlob(id: string): Promise<Blob | null> {
+  const bytes = await getOriginalPdfBytes(id);
+  if (!bytes) return null;
+  return new Blob([bytes.buffer as ArrayBuffer], { type: 'application/pdf' });
+}
+
+export async function storeSignedPdfBytes(id: string, bytes: Uint8Array): Promise<void> {
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    const store = tx.objectStore(STORE_NAME);
+    const req = store.put(bytes, `signed_${id}`);
+    req.onsuccess = () => resolve();
+    req.onerror = () => reject(req.error);
+  });
+}
+
+export async function getSignedPdfBytes(id: string): Promise<Uint8Array | null> {
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readonly');
+    const store = tx.objectStore(STORE_NAME);
+    const req = store.get(`signed_${id}`);
+    req.onsuccess = () => resolve(req.result || null);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+export async function getPdfBytes(id: string): Promise<Uint8Array | null> {
+  return getOriginalPdfBytes(id);
+}
+
+export async function removePdfBytes(id: string): Promise<void> {
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    const store = tx.objectStore(STORE_NAME);
+    store.delete(`original_${id}`);
+    store.delete(`signed_${id}`);
+    store.delete(id);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+// ── Document Storage ───────────────────────────────────────────────────────
+export function getLocalDocuments(): Document[] {
+  try {
+    const raw = localStorage.getItem(DOCUMENTS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch (e) {
+    console.error('Failed to parse local documents:', e);
+    return [];
+  }
+}
+
+export function saveLocalDocumentMeta(doc: Document): void {
+  const docs = getLocalDocuments();
+  const index = docs.findIndex((d) => d.id === doc.id);
+  if (index >= 0) {
+    docs[index] = doc;
+  } else {
+    docs.unshift(doc);
+  }
+  localStorage.setItem(DOCUMENTS_KEY, JSON.stringify(docs));
+}
+
+export async function deleteLocalDocumentRecord(id: string): Promise<void> {
+  const docs = getLocalDocuments().filter((d) => d.id !== id);
+  localStorage.setItem(DOCUMENTS_KEY, JSON.stringify(docs));
+  localStorage.removeItem(`inky_fields_${id}`);
+  localStorage.removeItem(`inky_recipients_${id}`);
+  await removePdfBytes(id);
+}
+
+export function getLocalDocumentFields(docId: string): SignatureField[] {
+  try {
+    const raw = localStorage.getItem(`inky_fields_${docId}`);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveLocalDocumentFields(docId: string, fields: SignatureField[]): void {
+  localStorage.setItem(`inky_fields_${docId}`, JSON.stringify(fields));
+}
+
+export function getLocalDocumentRecipients(docId: string): Recipient[] {
+  try {
+    const raw = localStorage.getItem(`inky_recipients_${docId}`);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveLocalDocumentRecipients(docId: string, recipients: Recipient[]): void {
+  localStorage.setItem(`inky_recipients_${docId}`, JSON.stringify(recipients));
+}
+
+// ── Inbox Links Storage ────────────────────────────────────────────────────
+export function getLocalInboxLinks(): InboxLink[] {
+  try {
+    const raw = localStorage.getItem(INBOX_LINKS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveLocalInboxLink(link: InboxLink): void {
+  const links = getLocalInboxLinks();
+  links.unshift(link);
+  localStorage.setItem(INBOX_LINKS_KEY, JSON.stringify(links));
+}
+
+// ── Saved Signatures Storage ───────────────────────────────────────────────
 export function getSavedSignatures(): SavedSignature[] {
   try {
     const raw = localStorage.getItem(SIGNATURES_KEY);
@@ -21,7 +191,6 @@ export function saveSignature(sig: Omit<SavedSignature, 'id' | 'createdAt'>): Sa
     createdAt: new Date().toISOString(),
   };
 
-  // If this signature is marked default or is the first one, reset default flags
   if (sig.isDefault || existing.length === 0) {
     existing.forEach((s) => (s.isDefault = false));
     newSig.isDefault = true;
@@ -53,5 +222,15 @@ export function setDefaultSignature(id: string): SavedSignature[] {
   });
   localStorage.setItem(DEFAULT_SIG_KEY, id);
   localStorage.setItem(SIGNATURES_KEY, JSON.stringify(signatures));
+  return signatures;
+}
+
+export function updateSavedSignatureLabel(id: string, label: string): SavedSignature[] {
+  const signatures = getSavedSignatures();
+  const target = signatures.find((s) => s.id === id);
+  if (target) {
+    target.label = label.trim() || 'Signature';
+    localStorage.setItem(SIGNATURES_KEY, JSON.stringify(signatures));
+  }
   return signatures;
 }

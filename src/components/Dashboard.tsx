@@ -7,8 +7,12 @@ import {
   Download,
   Trash2,
   ChevronRight,
+  PenTool,
+  Share2,
 } from 'lucide-react';
 import { Document } from '../types';
+import * as storage from '../lib/storage';
+import { downloadBlob } from '../utils';
 
 interface DashboardViewProps {
   documents: Document[];
@@ -40,6 +44,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     return true;
   });
 
+  const handleDownloadSigned = async (doc: Document, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const signedBytes = await storage.getSignedPdfBytes(doc.id) || await storage.getOriginalPdfBytes(doc.id);
+    if (signedBytes) {
+      const blob = new Blob([signedBytes as any], { type: 'application/pdf' });
+      downloadBlob(blob, `${doc.title.replace(/\s+/g, '_')}_signed.pdf`);
+    }
+  };
+
   const docStatusBadge = (doc: Document) => {
     if (doc.status === 'completed') return <span className="badge-moss">Signed</span>;
     if (doc.status === 'pending' && doc.source !== 'inbound') return <span className="badge-clay">Awaiting</span>;
@@ -70,17 +83,17 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           />
         </div>
 
-        {/* Filter pills */}
-        <div className="flex items-center gap-3 overflow-x-auto w-full sm:w-auto">
+        {/* Filter pills — non-scrollable, responsive pill segment */}
+        <div className="flex items-center gap-1 sm:gap-2 w-full sm:w-auto p-1 rounded-full bg-[var(--bg-stone)] sm:bg-transparent no-scrollbar">
           {[
-            { id: 'to_sign',   label: 'To Sign'   },
-            { id: 'pending',   label: 'Pending'    },
-            { id: 'completed', label: 'Recents'     },
+            { id: 'to_sign',   label: 'To Sign' },
+            { id: 'pending',   label: 'Pending' },
+            { id: 'completed', label: 'Recent'  },
           ].map((tab) => (
             <button
               key={tab.id}
               onClick={() => setActiveFilter(tab.id as any)}
-              className="px-5 py-2 rounded-full text-sm font-bold whitespace-nowrap transition-all duration-200 hover:text-[var(--fg)]"
+              className="flex-1 sm:flex-initial text-center px-2.5 xs:px-3 sm:px-5 py-1.5 sm:py-2 rounded-full text-xs sm:text-sm font-bold whitespace-nowrap transition-all duration-200"
               style={{
                 background: activeFilter === tab.id ? 'var(--moss)' : 'transparent',
                 color: activeFilter === tab.id ? '#F3F4F1' : 'var(--fg-muted)',
@@ -127,7 +140,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 Upload PDF
               </button>
               <button onClick={onGenerateInboxClick} className="btn-outline">
-                <Inbox style={{ height: 15, width: 15 }} />
+                <Share2 style={{ height: 15, width: 15 }} />
                 Inbox Link
               </button>
             </div>
@@ -173,17 +186,29 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               {/* Right: actions */}
               <div className="flex items-center gap-2 shrink-0 ml-3">
                 {doc.status === 'completed' ? (
-                  <a
-                    href={`/api/documents/${doc.id}/file`}
-                    target="_blank"
-                    rel="noreferrer"
-                    onClick={(e) => e.stopPropagation()}
-                    className="btn-primary btn-sm"
-                    aria-label="Download signed document"
-                  >
-                    <Download style={{ height: 14, width: 14 }} />
-                    <span>Download</span>
-                  </a>
+                  <>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onSelectDocument(doc);
+                      }}
+                      className="btn-primary btn-sm flex items-center gap-1.5"
+                      aria-label="Edit signed document"
+                      title="Edit fields or re-sign document"
+                    >
+                      <PenTool style={{ height: 13, width: 13 }} />
+                      <span>Edit</span>
+                    </button>
+                    <button
+                      onClick={(e) => handleDownloadSigned(doc, e)}
+                      className="btn-outline btn-sm flex items-center gap-1.5"
+                      aria-label="Download signed document"
+                      title="Download signed PDF"
+                    >
+                      <Download style={{ height: 13, width: 13 }} />
+                      <span>Download</span>
+                    </button>
+                  </>
                 ) : (
                   <button
                     className="btn-primary btn-sm"
@@ -197,7 +222,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    if (confirm('Permanently delete this document?')) onDeleteDocument(doc.id);
+                    onDeleteDocument(doc.id);
                   }}
                   className="p-2 rounded-xl transition-all duration-200 hover:scale-110"
                   style={{ color: 'var(--fg-muted)' }}

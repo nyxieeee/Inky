@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { X, Send, UserPlus, Trash2, Users, CheckCircle2 } from 'lucide-react';
-import { addDocumentRecipients, sendDocumentToRecipients } from '../lib/apiClient';
+import { X, Send, UserPlus, Trash2, Users, CheckCircle2, Mail, Share2, Copy, Check } from 'lucide-react';
+import { deliveryService } from '../services/deliveryService';
+import { useToastStore } from '../store/useToastStore';
 
 interface MultiSignerPanelProps {
   documentId: string;
@@ -18,20 +19,25 @@ export const MultiSignerPanel: React.FC<MultiSignerPanelProps> = ({
   const [recipients, setRecipients] = useState([{ email: '', name: '', signingOrder: 1 }]);
   const [isLoading, setIsLoading]   = useState(false);
   const [sentResult, setSentResult] = useState<any | null>(null);
+  const [copiedIdx, setCopiedIdx]   = useState<number | null>(null);
 
   if (!isOpen) return null;
 
   const handleSend = async () => {
     const valid = recipients.filter((r) => r.email.trim() && r.name.trim());
-    if (!valid.length) { alert('Add at least one recipient with name and email.'); return; }
+    if (!valid.length) { 
+        useToastStore.getState().showToast('Add at least one recipient with name and email.', 'warning');
+        return; 
+    }
     setIsLoading(true);
     try {
-      await addDocumentRecipients(documentId, valid);
-      const res = await sendDocumentToRecipients(documentId);
+      await deliveryService.setRecipients(documentId, valid);
+      const res = await deliveryService.sendDocument(documentId);
       setSentResult(res);
+      useToastStore.getState().showToast('Document sent to recipients', 'success');
       onSuccess();
     } catch (err: any) {
-      alert(err.message || 'Failed to send document');
+      useToastStore.getState().showToast(err.message || 'Failed to send document', 'error');
     } finally {
       setIsLoading(false);
     }
@@ -169,22 +175,91 @@ export const MultiSignerPanel: React.FC<MultiSignerPanelProps> = ({
                   Unique signing links sent to each recipient.
                 </p>
               </div>
-              <div className="space-y-2 text-left max-h-40 overflow-y-auto">
+              <div className="space-y-3 text-left max-h-60 overflow-y-auto pr-1">
                 {sentResult.recipients?.map((item: any, i: number) => (
                   <div
                     key={i}
-                    className="p-3 rounded-[1.25rem] text-xs"
+                    className="p-3.5 rounded-[1.25rem] text-xs space-y-2.5"
                     style={{ background: 'var(--bg-stone)', border: '1px solid var(--border-light)' }}
                   >
-                    <span className="font-bold block" style={{ color: 'var(--fg)' }}>
-                      {item.name} · {item.email}
-                    </span>
-                    <span
-                      className="font-mono text-[10px] block truncate mt-0.5"
-                      style={{ color: 'var(--fg-muted)' }}
-                    >
-                      {window.location.origin}{item.signingLink}
-                    </span>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span
+                          className="h-5 w-5 rounded-full flex items-center justify-center text-[10px] font-bold"
+                          style={{ background: 'var(--terracotta)', color: '#fff' }}
+                        >
+                          {i + 1}
+                        </span>
+                        <span className="font-bold" style={{ color: 'var(--fg)' }}>
+                          {item.name}
+                        </span>
+                      </div>
+                      <span className="text-[11px]" style={{ color: 'var(--fg-muted)' }}>
+                        {item.email}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2 pt-1">
+                      {/* 1. Direct Mailto Button */}
+                      <a
+                        href={item.mailtoUrl}
+                        className="flex-1 py-2 px-3 rounded-full text-[11px] font-bold flex items-center justify-center gap-1.5 transition-all duration-200 hover:scale-[1.02]"
+                        style={{
+                          background: 'var(--terracotta)',
+                          color: '#fff',
+                        }}
+                      >
+                        <Mail style={{ height: 13, width: 13 }} />
+                        <span>Send Email</span>
+                      </a>
+
+                      {/* 2. Device Share (WhatsApp/Slack/Messages) */}
+                      {typeof navigator !== 'undefined' && !!navigator.share && (
+                        <button
+                          onClick={() => {
+                            deliveryService.shareViaDevice(
+                              'Signature Request',
+                              `Hi ${item.name}, please sign this document on Inky:`,
+                              item.signingUrl
+                            );
+                          }}
+                          className="p-2 rounded-full transition-all duration-200 hover:scale-110"
+                          style={{
+                            background: 'var(--clay-dim)',
+                            color: 'var(--terracotta)',
+                            border: '1px solid rgba(193,140,93,0.25)',
+                          }}
+                          title="Share via device (WhatsApp, Slack, Messages)"
+                          aria-label="Share via device"
+                        >
+                          <Share2 style={{ height: 14, width: 14 }} />
+                        </button>
+                      )}
+
+                      {/* 3. Copy Link */}
+                      <button
+                        onClick={async () => {
+                          await navigator.clipboard.writeText(item.signingUrl);
+                          setCopiedIdx(i);
+                          useToastStore.getState().showToast(`Copied signing link for ${item.name}`, 'success');
+                          setTimeout(() => setCopiedIdx(null), 2500);
+                        }}
+                        className="p-2 rounded-full transition-all duration-200 hover:scale-110"
+                        style={{
+                          background: copiedIdx === i ? 'var(--moss-dim)' : 'var(--bg-paper)',
+                          color: copiedIdx === i ? 'var(--moss)' : 'var(--fg-muted)',
+                          border: '1px solid var(--border-light)',
+                        }}
+                        title="Copy signing link"
+                        aria-label="Copy signing link"
+                      >
+                        {copiedIdx === i ? (
+                          <Check style={{ height: 14, width: 14 }} />
+                        ) : (
+                          <Copy style={{ height: 14, width: 14 }} />
+                        )}
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
