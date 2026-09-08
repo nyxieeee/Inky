@@ -1,0 +1,374 @@
+@import url('https://fonts.googleapis.com/css2?family=Philosopher:ital,wght@0,400;0,700;1,400;1,700&family=Dancing+Script:wght@700&display=swap');
+
+@font-face {
+  font-family: 'Philosopher';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/Philosopher-Regular.ttf') format('truetype');
+}
+
+@font-face {
+  font-family: 'Philosopher';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/Philosopher-Bold.ttf') format('truetype');
+}
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ─── CSS Custom Properties ──────────────────────────────── */
+@layer base {
+  :root {
+    /* Core surfaces */
+    --bg:            #FDFCF8;
+    --bg-stone:      #F0EBE5;
+    --bg-sand:       #E6DCCD;
+    --surface:       #FEFEFA;
+
+    /* Ink */
+    --fg:            #2C2C24;
+    --fg-muted:      #78786C;
+    --fg-subtle:     #A8A89C;
+
+    /* Brand */
+    --moss:          #5D7052;
+    --moss-dim:      rgba(93,112,82,0.12);
+    --terracotta:    #C18C5D;
+    --clay-dim:      rgba(193,140,93,0.12);
+
+    /* Border */
+    --border:        #DED8CF;
+    --border-light:  rgba(222,216,207,0.60);
+    --border-heavy:  rgba(44,44,36,0.12);
+
+    /* Shadows */
+    --shadow-soft:   0 4px 20px -2px rgba(93,112,82,0.15);
+    --shadow-float:  0 10px 40px -10px rgba(193,140,93,0.20);
+  }
+
+  /* ─── Dark Mode ─────────────────────────────────────── */
+  .dark {
+    --bg:            #1A1D17;
+    --bg-stone:      #22261E;
+    --bg-sand:       #2A2E24;
+    --surface:       #1E2219;
+    --fg:            #E8E5DC;
+    --fg-muted:      #8A8A7E;
+    --fg-subtle:     #605F57;
+    --border:        rgba(255,255,255,0.10);
+    --border-light:  rgba(255,255,255,0.06);
+    --border-heavy:  rgba(255,255,255,0.14);
+  }
+
+  html {
+    font-size: 17px;
+  }
+
+  html, body, #root {
+    min-height: 100%;
+  }
+
+  html, body, button, input, select, textarea {
+    font-family: 'Philosopher', serif !important;
+  }
+
+  body {
+    background-color: var(--bg);
+    color: var(--fg);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    overscroll-behavior-y: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* ── Global Grain Texture Overlay (wabi-sabi paper feel) ── */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='400'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='400' height='400' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E");
+    background-repeat: repeat;
+    opacity: 0.035;
+    mix-blend-mode: multiply;
+  }
+
+  /* Ensure content sits above grain layer */
+  #root {
+    position: relative;
+    z-index: 1;
+  }
+}
+
+/* ─── Organic Component Utilities ────────────────────────── */
+@layer components {
+
+  /* ── Buttons ─────────────────────────────────────────── */
+  .btn-primary {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0 1.75rem;
+    height: 2.75rem;
+    border-radius: 9999px;
+    background: var(--moss);
+    color: #F3F4F1;
+    font-family: 'Philosopher', serif;
+    font-weight: 700;
+    font-size: 0.95rem;
+    box-shadow: 0 4px 20px -2px rgba(93,112,82,0.25);
+    transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+    cursor: pointer;
+    border: none;
+    white-space: nowrap;
+  }
+  .btn-primary:hover {
+    transform: scale(1.03);
+    box-shadow: 0 6px 28px -4px rgba(93,112,82,0.35);
+  }
+  .btn-primary:active {
+    transform: scale(0.97);
+    box-shadow: 0 2px 12px -2px rgba(93,112,82,0.20);
+  }
+  .btn-primary:disabled {
+    opacity: 0.5;
+    pointer-events: none;
+  }
+
+  .btn-secondary {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0 1.75rem;
+    height: 2.75rem;
+    border-radius: 9999px;
+    background: var(--terracotta);
+    color: #FFFFFF;
+    font-family: 'Philosopher', serif;
+    font-weight: 700;
+    font-size: 0.95rem;
+    box-shadow: 0 4px 20px -2px rgba(193,140,93,0.25);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    cursor: pointer;
+    border: none;
+    white-space: nowrap;
+  }
+  .btn-secondary:hover  { transform: scale(1.03); box-shadow: 0 6px 28px -4px rgba(193,140,93,0.35); }
+  .btn-secondary:active { transform: scale(0.97); }
+  .btn-secondary:disabled { opacity: 0.5; pointer-events: none; }
+
+  .btn-outline {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0 1.75rem;
+    height: 2.75rem;
+    border-radius: 9999px;
+    background: transparent;
+    color: var(--terracotta);
+    border: 2px solid var(--terracotta);
+    font-family: 'Philosopher', serif;
+    font-weight: 700;
+    font-size: 0.95rem;
+    transition: transform 0.2s ease, background 0.2s ease;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .btn-outline:hover  { background: rgba(193,140,93,0.08); transform: scale(1.03); }
+  .btn-outline:active { transform: scale(0.97); }
+
+  .btn-ghost {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0 1.25rem;
+    height: 2.5rem;
+    border-radius: 9999px;
+    background: transparent;
+    color: var(--moss);
+    font-family: 'Philosopher', serif;
+    font-weight: 600;
+    font-size: 0.95rem;
+    transition: background 0.2s ease, transform 0.15s ease;
+    cursor: pointer;
+    border: none;
+    white-space: nowrap;
+  }
+  .btn-ghost:hover  { background: rgba(93,112,82,0.10); }
+  .btn-ghost:active { transform: scale(0.97); }
+
+  /* Compact small variant */
+  .btn-sm {
+    height: 2.35rem !important;
+    padding: 0 1.25rem !important;
+    font-size: 0.875rem !important;
+  }
+
+  /* ── Cards ───────────────────────────────────────────── */
+  .card-organic {
+    background: var(--surface);
+    border: 1px solid var(--border-light);
+    box-shadow: var(--shadow-soft);
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+  }
+  .card-organic:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 20px 40px -10px rgba(93,112,82,0.15);
+  }
+
+  /* ── Inputs ──────────────────────────────────────────── */
+  .input-organic {
+    width: 100%;
+    padding: 0 1.25rem;
+    height: 3rem;
+    border-radius: 9999px;
+    background: rgba(255,255,255,0.55);
+    border: 1.5px solid var(--border);
+    color: var(--fg);
+    font-family: 'Philosopher', serif;
+    font-size: 0.875rem;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    outline: none;
+  }
+  .input-organic::placeholder { color: var(--fg-subtle); }
+  .input-organic:focus {
+    border-color: var(--moss);
+    box-shadow: 0 0 0 3px rgba(93,112,82,0.18);
+  }
+
+  .textarea-organic {
+    width: 100%;
+    padding: 0.75rem 1.25rem;
+    border-radius: 1.5rem;
+    background: rgba(255,255,255,0.55);
+    border: 1.5px solid var(--border);
+    color: var(--fg);
+    font-family: 'Philosopher', serif;
+    font-size: 0.875rem;
+    resize: none;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    outline: none;
+  }
+  .textarea-organic::placeholder { color: var(--fg-subtle); }
+  .textarea-organic:focus {
+    border-color: var(--moss);
+    box-shadow: 0 0 0 3px rgba(93,112,82,0.18);
+  }
+
+  .select-organic {
+    width: 100%;
+    padding: 0 1.25rem;
+    height: 3rem;
+    border-radius: 9999px;
+    background: rgba(255,255,255,0.55);
+    border: 1.5px solid var(--border);
+    color: var(--fg);
+    font-family: 'Philosopher', serif;
+    font-size: 0.875rem;
+    cursor: pointer;
+    outline: none;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%2378786C' stroke-width='2' viewBox='0 0 24 24'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 1rem center;
+    padding-right: 2.5rem;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  }
+  .select-organic:focus {
+    border-color: var(--moss);
+    box-shadow: 0 0 0 3px rgba(93,112,82,0.18);
+  }
+
+  /* ── Glass ───────────────────────────────────────────── */
+  .glass {
+    background: rgba(253,252,248,0.78);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border: 1px solid rgba(222,216,207,0.60);
+    box-shadow: 0 4px 24px rgba(44,44,36,0.06);
+  }
+
+  .glass-dark {
+    background: rgba(26,29,23,0.80);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border: 1px solid rgba(255,255,255,0.08);
+    box-shadow: 0 4px 24px rgba(0,0,0,0.25);
+  }
+
+  /* ── Badges ──────────────────────────────────────────── */
+  .badge-moss {
+    display: inline-flex;
+    align-items: center;
+    white-space: nowrap;
+    flex-shrink: 0;
+    gap: 0.25rem;
+    padding: 0.25rem 0.85rem;
+    border-radius: 9999px;
+    background: rgba(93,112,82,0.12);
+    color: var(--moss);
+    border: 1px solid rgba(93,112,82,0.22);
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+  }
+
+  .badge-clay {
+    display: inline-flex;
+    align-items: center;
+    white-space: nowrap;
+    flex-shrink: 0;
+    gap: 0.25rem;
+    padding: 0.25rem 0.85rem;
+    border-radius: 9999px;
+    background: rgba(193,140,93,0.12);
+    color: var(--terracotta);
+    border: 1px solid rgba(193,140,93,0.22);
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+  }
+
+  .badge-stone {
+    display: inline-flex;
+    align-items: center;
+    white-space: nowrap;
+    flex-shrink: 0;
+    gap: 0.25rem;
+    padding: 0.25rem 0.85rem;
+    border-radius: 9999px;
+    background: rgba(120,120,108,0.10);
+    color: var(--fg-muted);
+    border: 1px solid rgba(120,120,108,0.18);
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+  }
+}
+
+/* ─── Scrollbars ────────────────────────────────────────── */
+::-webkit-scrollbar       { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: rgba(93,112,82,0.25);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover { background: rgba(93,112,82,0.40); }
+
+/* ─── Animations ────────────────────────────────────────── */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fadeIn  { animation: fadeIn  0.30s ease both; }
+.animate-slideUp { animation: slideUp 0.35s ease both; }
