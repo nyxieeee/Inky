@@ -6,6 +6,7 @@ import { MultiSignerPanel } from './components/MultiSignerPanel';
 import { InboundPortal } from './components/InboundPortal';
 import { SignerPortal } from './components/SignerPortal';
 import { HistoryView } from './components/HistoryView';
+import { LoginPage } from './components/LoginPage';
 import Toast from './components/Toast';
 
 // Modals
@@ -59,7 +60,8 @@ export function App() {
 
   const { showToast } = useToastStore();
   const updateDimensions = useFoldableStore((s) => s.updateDimensions);
-  const { isAuthModalOpen, closeAuthModal, initializeAuth } = useAuthStore();
+  const { user, isLoading, isAuthModalOpen, closeAuthModal, initializeAuth } = useAuthStore();
+  const [guestMode, setGuestMode] = useState(false);
 
   // Modals & Local UI state
   const [targetFieldId, setTargetFieldId] = useState<string | undefined>(undefined);
@@ -87,13 +89,27 @@ export function App() {
     setEditingSigId(null);
   };
 
-  // Public portal route detection (Inbound submission + Signer portal)
-  const pathname = window.location.pathname;
-  const isInboxRoute = pathname.startsWith('/inbox-submit/');
-  const inboundToken = isInboxRoute ? pathname.split('/inbox-submit/')[1] : null;
+  // Path navigation & Route detection
+  const [currentPath, setCurrentPath] = useState(window.location.pathname);
 
-  const isSignRoute = pathname.startsWith('/sign/');
-  const signToken = isSignRoute ? pathname.split('/sign/')[1] : null;
+  useEffect(() => {
+    const handlePopState = () => {
+      setCurrentPath(window.location.pathname);
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  const navigateTo = (path: string) => {
+    window.history.pushState({}, '', path);
+    setCurrentPath(path);
+  };
+
+  const isInboxRoute = currentPath.startsWith('/inbox-submit/');
+  const inboundToken = isInboxRoute ? currentPath.split('/inbox-submit/')[1] : null;
+
+  const isSignRoute = currentPath.startsWith('/sign/');
+  const signToken = isSignRoute ? currentPath.split('/sign/')[1] : null;
   const isPublicRoute = isInboxRoute || isSignRoute;
 
   // Inbox links list
@@ -110,8 +126,8 @@ export function App() {
 
   // Initial load
   useEffect(() => {
+    initializeAuth();
     if (!isPublicRoute) {
-      initializeAuth();
       fetchDocuments();
       loadSignatures();
       loadInboxLinks();
@@ -133,6 +149,33 @@ export function App() {
 
   if (isSignRoute && signToken) {
     return <SignerPortal token={signToken} />;
+  }
+
+  // Initial auth check loading state
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[var(--bg)]">
+        <div className="flex flex-col items-center gap-3">
+          <img src="/inky-mark.png" alt="Inky" className="h-12 w-auto animate-pulse" />
+          <span className="text-xs font-semibold text-[var(--fg-muted)]">Loading Inky…</span>
+        </div>
+      </div>
+    );
+  }
+
+  // Show login page by default when running website unauthenticated (unless guest mode chosen)
+  if ((!user && !guestMode) || currentPath === '/login') {
+    return (
+      <>
+        <LoginPage
+          onNavigateHome={() => {
+            setGuestMode(true);
+            navigateTo('/');
+          }}
+        />
+        <Toast />
+      </>
+    );
   }
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -189,6 +232,7 @@ export function App() {
       }}
       onUploadClick={() => fileInputRef.current?.click()}
       onGenerateInboxClick={() => setIsShareInboxOpen(true)}
+      onNavigateLogin={() => navigateTo('/login')}
     >
       {/* Hidden file input */}
       <input

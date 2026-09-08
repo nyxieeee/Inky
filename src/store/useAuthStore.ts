@@ -16,6 +16,8 @@ interface AuthState {
 
   // Auth actions
   initializeAuth: () => Promise<void>;
+  signInWithGoogle: () => Promise<{ success: boolean; error?: string }>;
+  signInWithDemoGoogle: () => void;
   signInWithMagicLink: (email: string) => Promise<{ success: boolean; error?: string }>;
   signInWithPassword: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
   signUpWithPassword: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
@@ -60,6 +62,76 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       console.warn('Supabase auth initialization error:', e);
       set({ isLoading: false });
     }
+  },
+
+  signInWithGoogle: async () => {
+    if (!supabase) {
+      const msg = 'Supabase credentials needed. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to .env to use Google Sign-In.';
+      useToastStore.getState().showToast(msg, 'info');
+      return { success: false, error: msg };
+    }
+
+    set({ isLoading: true });
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: window.location.origin,
+        },
+      });
+
+      if (error) throw error;
+      return { success: true };
+    } catch (err: any) {
+      const msg = err.message || 'Failed to sign in with Google';
+      useToastStore.getState().showToast(msg, 'error');
+      return { success: false, error: msg };
+    } finally {
+      set({ isLoading: false });
+    }
+  },
+
+  signInWithDemoGoogle: () => {
+    const demoUser = {
+      id: 'demo-google-user',
+      app_metadata: { provider: 'google', providers: ['google'] },
+      user_metadata: {
+        full_name: 'Demo Google User',
+        name: 'Demo Google User',
+        avatar_url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80',
+      },
+      aud: 'authenticated',
+      confirmation_sent_at: '',
+      recovery_sent_at: '',
+      email_change_sent_at: '',
+      new_email: '',
+      invited_at: '',
+      action_link: '',
+      email: 'demo.user@gmail.com',
+      phone: '',
+      created_at: new Date().toISOString(),
+      confirmed_at: new Date().toISOString(),
+      email_confirmed_at: new Date().toISOString(),
+      phone_confirmed_at: '',
+      last_sign_in_at: new Date().toISOString(),
+      role: 'authenticated',
+      updated_at: new Date().toISOString(),
+      identities: [],
+      factors: [],
+    } as unknown as User;
+
+    set({
+      user: demoUser,
+      session: {
+        access_token: 'demo-token',
+        token_type: 'bearer',
+        expires_in: 3600,
+        refresh_token: 'demo-refresh',
+        user: demoUser,
+      } as unknown as Session,
+      isAuthModalOpen: false,
+    });
+    useToastStore.getState().showToast('Signed in with Demo Google account!', 'success');
   },
 
   signInWithMagicLink: async (email: string) => {

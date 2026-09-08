@@ -6,7 +6,6 @@ import {
   PlusCircle,
   History,
   Share2,
-  Cloud,
 } from 'lucide-react';
 import { useAuthStore } from '../store/useAuthStore';
 
@@ -16,6 +15,7 @@ interface FoldableLayoutProps {
   setActiveTab: (tab: 'dashboard' | 'editor' | 'inbox' | 'signatures' | 'history') => void;
   onUploadClick: () => void;
   onGenerateInboxClick: () => void;
+  onNavigateLogin?: () => void;
 }
 
 // Ambient background blob — brings depth and organic atmosphere
@@ -33,6 +33,7 @@ export const FoldableLayout: React.FC<FoldableLayoutProps> = ({
   setActiveTab,
   onUploadClick,
   onGenerateInboxClick,
+  onNavigateLogin,
 }) => {
   const { user, openAuthModal } = useAuthStore();
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
@@ -105,30 +106,6 @@ export const FoldableLayout: React.FC<FoldableLayoutProps> = ({
 
           {/* Action buttons */}
           <div className="flex items-center gap-2">
-            {/* Account / Cloud Sync Pill */}
-            <button
-              onClick={openAuthModal}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-all hover:scale-105"
-              style={{
-                background: user ? 'var(--moss-dim)' : 'rgba(255,255,255,0.60)',
-                color: user ? 'var(--moss)' : 'var(--fg-muted)',
-                border: '1px solid var(--border)',
-              }}
-              title={user ? `Signed in as ${user.email}` : 'Sign in to sync across devices'}
-            >
-              {user ? (
-                <>
-                  <span className="h-2 w-2 rounded-full bg-[var(--moss)] animate-pulse" />
-                  <span className="hidden md:inline max-w-[100px] truncate">{user.email?.split('@')[0]}</span>
-                </>
-              ) : (
-                <>
-                  <Cloud style={{ height: 13, width: 13 }} />
-                  <span className="hidden sm:inline">Sync</span>
-                </>
-              )}
-            </button>
-
             <button
               onClick={onGenerateInboxClick}
               className="btn-ghost btn-sm"
@@ -137,6 +114,7 @@ export const FoldableLayout: React.FC<FoldableLayoutProps> = ({
               <Share2 style={{ height: 14, width: 14 }} />
               <span className="hidden sm:inline">Inbox Link</span>
             </button>
+
             <button
               onClick={onUploadClick}
               className="btn-primary btn-sm"
@@ -145,6 +123,26 @@ export const FoldableLayout: React.FC<FoldableLayoutProps> = ({
               <PlusCircle style={{ height: 14, width: 14 }} />
               <span>Upload PDF</span>
             </button>
+
+            {/* Account button: displayed on the right of Upload PDF when signed in */}
+            {user && (
+              <button
+                onClick={openAuthModal}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-all hover:scale-105 cursor-pointer"
+                style={{
+                  background: 'var(--moss-dim)',
+                  color: 'var(--moss)',
+                  border: '1px solid var(--border)',
+                  boxShadow: '0 2px 6px rgba(44, 44, 36, 0.04)',
+                }}
+                title={`Signed in as ${user.email}`}
+              >
+                <span className="h-2 w-2 rounded-full bg-[var(--moss)] animate-pulse" />
+                <span className="max-w-[110px] truncate">
+                  {user.user_metadata?.full_name?.split(' ')[0] || user.email?.split('@')[0]}
+                </span>
+              </button>
+            )}
           </div>
         </nav>
       </header>

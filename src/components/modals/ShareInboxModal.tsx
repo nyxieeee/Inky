@@ -66,7 +66,7 @@ export const ShareInboxModal: React.FC<ShareInboxModalProps> = ({ isOpen, onClos
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
       <div
-        className="card-organic max-w-md w-full overflow-hidden animate-slideUp"
+        className="card-organic max-w-md w-full animate-slideUp"
         style={{ borderRadius: '2.5rem' }}
       >
         {/* Header */}
@@ -132,6 +132,7 @@ export const ShareInboxModal: React.FC<ShareInboxModalProps> = ({ isOpen, onClos
                     value={expiresHours}
                     onChange={(val) => setExpiresHours(Number(val))}
                     options={EXPIRATION_OPTIONS}
+                    direction="up"
                   />
                 </div>
                 <div>
@@ -140,6 +141,7 @@ export const ShareInboxModal: React.FC<ShareInboxModalProps> = ({ isOpen, onClos
                     value={maxUses}
                     onChange={(val) => setMaxUses(Number(val))}
                     options={MAX_USES_OPTIONS}
+                    direction="up"
                   />
                 </div>
               </div>
