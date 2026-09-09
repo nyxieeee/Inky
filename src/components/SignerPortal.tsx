@@ -22,6 +22,7 @@ import { Recipient, Document, SignatureField } from '../types';
 import { SignaturePadModal } from './modals/SignaturePadModal';
 import { useToastStore } from '../store/useToastStore';
 import { getSignerColor } from './PdfViewer';
+import { supabase, isSupabaseConfigured } from '../lib/supabase';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js`;
 
@@ -79,6 +80,49 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token }) => {
 
     return () => { isMounted = false; };
   }, [token]);
+
+  // Realtime subscription for live field updates from other signers
+  useEffect(() => {
+    if (!context?.document?.id || !isSupabaseConfigured() || !supabase) return;
+
+    const channelName = `signer-fields-${context.document.id}`;
+    const channel = supabase
+      .channel(channelName)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'signature_fields',
+          filter: `document_id=eq.${context.document.id}`,
+        },
+        (payload: any) => {
+          const updated = payload.new;
+          if (updated && updated.value) {
+            setFieldValues((prev) => ({
+              ...prev,
+              [updated.id]: { value: updated.value, fontFamily: updated.font_family },
+            }));
+            setContext((prev) => {
+              if (!prev) return prev;
+              return {
+                ...prev,
+                fields: prev.fields.map((f) =>
+                  f.id === updated.id
+                    ? { ...f, value: updated.value, fontFamily: updated.font_family }
+                    : f
+                ),
+              };
+            });
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase?.removeChannel(channel);
+    };
+  }, [context?.document?.id]);
 
   // Load PDF Document when pdfBlob is available
   useEffect(() => {

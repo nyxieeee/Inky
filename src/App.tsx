@@ -22,6 +22,7 @@ import { useToastStore } from './store/useToastStore';
 import { useFoldableStore } from './store/useFoldableStore';
 import { useAuthStore } from './store/useAuthStore';
 import { inboxService } from './services/inboxService';
+import { realtimeService } from './services/realtimeService';
 import { InboxLink } from './types';
 
 // Icons
@@ -165,6 +166,14 @@ export function App() {
       loadInboxLinks();
     }
   }, [isPublicRoute]);
+
+  // Supabase Realtime Subscription (Live sync across devices & remote signers)
+  useEffect(() => {
+    const unsubscribe = realtimeService.subscribeToAll();
+    return () => {
+      unsubscribe();
+    };
+  }, []);
 
   const loadInboxLinks = async () => {
     try {
