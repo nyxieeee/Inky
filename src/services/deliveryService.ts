@@ -3,6 +3,7 @@ import { Recipient, Document, SignatureField } from '../types';
 import * as storage from '../lib/storage';
 import { uid } from '../utils';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { emailService, EmailDispatchResult } from './emailService';
 
 export interface DispatchedRecipient extends Recipient {
   signingUrl: string;
@@ -10,6 +11,8 @@ export interface DispatchedRecipient extends Recipient {
   gmailUrl: string;
   emailSubject: string;
   emailBody: string;
+  emailSent?: boolean;
+  emailError?: string;
 }
 
 /**
@@ -204,10 +207,56 @@ export const deliveryService = {
       };
     });
 
+    // ── Automated Gmail SMTP Dispatch via Supabase Edge Function ──
+    if (isSupabaseConfigured() && supabase) {
+      let senderName = 'Inky';
+      try {
+        const { data: authData } = await supabase.auth.getUser();
+        senderName = authData?.user?.user_metadata?.full_name || authData?.user?.email || 'Inky';
+      } catch (e) {
+        console.warn('Could not read user profile for senderName:', e);
+      }
+
+      await Promise.all(
+        dispatched.map(async (item) => {
+          const res = await emailService.sendSigningInvitation({
+            to: item.email,
+            recipientName: item.name,
+            docTitle,
+            signingUrl: item.signingUrl,
+            senderName,
+          });
+          item.emailSent = res.success;
+          if (!res.success) {
+            item.emailError = res.error;
+          }
+        })
+      );
+    }
+
     return {
       message: `Document dispatched to ${dispatched.length} recipient${dispatched.length > 1 ? 's' : ''}`,
       recipients: dispatched,
     };
+  },
+
+  async resendSignerEmail(recipient: DispatchedRecipient, docTitle: string = 'Document'): Promise<EmailDispatchResult> {
+    let senderName = 'Inky';
+    if (isSupabaseConfigured() && supabase) {
+      try {
+        const { data: authData } = await supabase.auth.getUser();
+        senderName = authData?.user?.user_metadata?.full_name || authData?.user?.email || 'Inky';
+      } catch (e) {
+        console.warn('Could not read user profile for senderName:', e);
+      }
+    }
+    return emailService.sendSigningInvitation({
+      to: recipient.email,
+      recipientName: recipient.name,
+      docTitle,
+      signingUrl: recipient.signingUrl,
+      senderName,
+    });
   },
 
   buildMailtoUrl(recipient: Recipient, docTitle: string): string {

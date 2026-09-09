@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { X, Send, UserPlus, Trash2, Users, CheckCircle2, Mail, Share2, Copy, Check, ExternalLink, CloudOff, Info } from 'lucide-react';
-import { deliveryService } from '../services/deliveryService';
+import { X, Send, UserPlus, Trash2, Users, CheckCircle2, Mail, Share2, Copy, Check, ExternalLink, CloudOff, Info, RotateCw, Loader2 } from 'lucide-react';
+import { deliveryService, DispatchedRecipient } from '../services/deliveryService';
 import { useToastStore } from '../store/useToastStore';
 import { isSupabaseConfigured } from '../lib/supabase';
 
@@ -21,6 +21,7 @@ export const MultiSignerPanel: React.FC<MultiSignerPanelProps> = ({
   const [isLoading, setIsLoading]   = useState(false);
   const [sentResult, setSentResult] = useState<any | null>(null);
   const [copiedIdx, setCopiedIdx]   = useState<number | null>(null);
+  const [resendingIdx, setResendingIdx] = useState<number | null>(null);
 
   if (!isOpen) return null;
 
@@ -35,12 +36,39 @@ export const MultiSignerPanel: React.FC<MultiSignerPanelProps> = ({
       await deliveryService.setRecipients(documentId, valid);
       const res = await deliveryService.sendDocument(documentId);
       setSentResult(res);
-      useToastStore.getState().showToast('Document sent to recipients', 'success');
+      const allSent = res.recipients?.every((r) => r.emailSent);
+      if (allSent) {
+        useToastStore.getState().showToast('Document sent & email invitations dispatched!', 'success');
+      } else {
+        useToastStore.getState().showToast('Document dispatched & links generated!', 'success');
+      }
       onSuccess();
     } catch (err: any) {
       useToastStore.getState().showToast(err.message || 'Failed to send document', 'error');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleResendEmail = async (item: DispatchedRecipient, index: number) => {
+    setResendingIdx(index);
+    try {
+      const res = await deliveryService.resendSignerEmail(item);
+      if (res.success) {
+        useToastStore.getState().showToast(`Email invitation sent to ${item.email}!`, 'success');
+        setSentResult((prev: any) => {
+          if (!prev) return prev;
+          const updated = [...prev.recipients];
+          updated[index] = { ...updated[index], emailSent: true, emailError: undefined };
+          return { ...prev, recipients: updated };
+        });
+      } else {
+        useToastStore.getState().showToast(res.error || 'Failed to deliver email via Gmail SMTP', 'error');
+      }
+    } catch (err: any) {
+      useToastStore.getState().showToast(err.message || 'Error resending email', 'error');
+    } finally {
+      setResendingIdx(null);
     }
   };
 
@@ -170,10 +198,10 @@ export const MultiSignerPanel: React.FC<MultiSignerPanelProps> = ({
               </div>
               <div>
                 <h4 className="font-display font-bold text-lg" style={{ color: 'var(--fg)' }}>
-                  Signing Links Ready!
+                  Signing Invitations Dispatched!
                 </h4>
                 <p className="text-xs mt-1" style={{ color: 'var(--fg-muted)' }}>
-                  Click <strong>Send with Gmail</strong> or copy the link below to deliver the invitation.
+                  Invitations are delivered automatically via your Gmail SMTP, or you can copy individual links below.
                 </p>
               </div>
 
@@ -207,29 +235,79 @@ export const MultiSignerPanel: React.FC<MultiSignerPanelProps> = ({
                           {item.name}
                         </span>
                       </div>
-                      <span className="text-[11px]" style={{ color: 'var(--fg-muted)' }}>
-                        {item.email}
-                      </span>
+                      
+                      <div className="flex items-center gap-1.5">
+                        {item.emailSent ? (
+                          <span
+                            className="px-2 py-0.5 rounded-full text-[10px] font-bold flex items-center gap-1"
+                            style={{ background: 'var(--moss-dim)', color: 'var(--moss)' }}
+                          >
+                            <Check style={{ height: 10, width: 10 }} />
+                            Sent via Gmail
+                          </span>
+                        ) : (
+                          <span
+                            className="px-2 py-0.5 rounded-full text-[10px] font-bold flex items-center gap-1"
+                            style={{ background: 'rgba(217, 158, 75, 0.15)', color: '#8C5E1A' }}
+                            title={item.emailError || 'Email delivery available'}
+                          >
+                            <Info style={{ height: 10, width: 10 }} />
+                            Link Ready
+                          </span>
+                        )}
+                        <span className="text-[11px]" style={{ color: 'var(--fg-muted)' }}>
+                          {item.email}
+                        </span>
+                      </div>
                     </div>
 
                     <div className="flex items-center gap-1.5 pt-1">
-                      {/* 1. Web Gmail Direct (No OS popup) */}
+                      {/* 1. Automated Resend / Send via Gmail SMTP */}
+                      <button
+                        onClick={() => handleResendEmail(item, i)}
+                        disabled={resendingIdx === i}
+                        className="flex-1 py-2 px-3 rounded-full text-[11px] font-bold flex items-center justify-center gap-1.5 transition-all duration-200 hover:scale-[1.02] disabled:opacity-50"
+                        style={{
+                          background: item.emailSent ? 'var(--bg-paper)' : 'var(--terracotta)',
+                          color: item.emailSent ? 'var(--fg)' : '#fff',
+                          border: item.emailSent ? '1px solid var(--border-light)' : 'none',
+                        }}
+                        title={item.emailSent ? 'Resend automated invitation email' : 'Send invitation email via Gmail'}
+                      >
+                        {resendingIdx === i ? (
+                          <Loader2 className="animate-spin" style={{ height: 13, width: 13 }} />
+                        ) : item.emailSent ? (
+                          <RotateCw style={{ height: 13, width: 13 }} />
+                        ) : (
+                          <Mail style={{ height: 13, width: 13 }} />
+                        )}
+                        <span>
+                          {resendingIdx === i
+                            ? 'Sending...'
+                            : item.emailSent
+                            ? 'Resend Email'
+                            : 'Send Email'}
+                        </span>
+                      </button>
+
+                      {/* 2. Direct Web Gmail Compose Fallback */}
                       <a
                         href={item.gmailUrl}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="flex-1 py-2 px-3 rounded-full text-[11px] font-bold flex items-center justify-center gap-1.5 transition-all duration-200 hover:scale-[1.02]"
+                        className="p-2 rounded-full transition-all duration-200 hover:scale-110"
                         style={{
-                          background: 'var(--terracotta)',
-                          color: '#fff',
+                          background: 'var(--bg-paper)',
+                          color: 'var(--fg-muted)',
+                          border: '1px solid var(--border-light)',
                         }}
-                        title="Open composed email directly in Gmail (Web)"
+                        title="Open composed draft directly in Gmail Web"
+                        aria-label="Open composed draft in Gmail Web"
                       >
                         <Mail style={{ height: 13, width: 13 }} />
-                        <span>Send with Gmail</span>
                       </a>
 
-                      {/* 2. Default Desktop Mail Client (mailto:) */}
+                      {/* 3. Default Desktop Mail Client (mailto:) */}
                       <a
                         href={item.mailtoUrl}
                         className="p-2 rounded-full transition-all duration-200 hover:scale-110"

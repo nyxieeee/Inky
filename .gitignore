@@ -46,3 +46,9 @@ Thumbs.db
 !.vscode/settings.json
 !.vscode/extensions.json
 .idea/
+
+# SMTP password
+*inky smtp password.txt
+
+# Temporary Files
+*.temp
