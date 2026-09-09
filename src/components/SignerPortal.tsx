@@ -16,6 +16,9 @@ import {
   ShieldCheck,
   Leaf,
   User,
+  Move,
+  Plus,
+  Trash2,
 } from 'lucide-react';
 import { deliveryService } from '../services/deliveryService';
 import { Recipient, Document, SignatureField } from '../types';
@@ -45,10 +48,15 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token }) => {
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [scale, setScale] = useState<number>(1.15);
 
+  // Dynamic fields state (starts with context.fields, supports signer adding fields on the fly)
+  const [fields, setFields] = useState<SignatureField[]>([]);
   // Local field value changes by this signer
   const [fieldValues, setFieldValues] = useState<Record<string, { value: string; fontFamily?: string }>>({});
   const [isSigModalOpen, setIsSigModalOpen] = useState(false);
   const [activeSigFieldId, setActiveSigFieldId] = useState<string | null>(null);
+  const [pendingAddCoords, setPendingAddCoords] = useState<{ x: number; y: number } | null>(null);
+  const [draggingFieldId, setDraggingFieldId] = useState<string | null>(null);
+  const [dragOffset, setDragOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submittedResult, setSubmittedResult] = useState<{ allComplete: boolean; message: string } | null>(null);
 
@@ -63,6 +71,7 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token }) => {
         if (!isMounted) return;
         setContext(ctx);
         if (ctx) {
+          setFields(ctx.fields);
           // Initialize already-filled fields
           const initial: Record<string, { value: string; fontFamily?: string }> = {};
           ctx.fields.forEach((f) => {
@@ -103,17 +112,56 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token }) => {
               ...prev,
               [updated.id]: { value: updated.value, fontFamily: updated.font_family },
             }));
-            setContext((prev) => {
-              if (!prev) return prev;
-              return {
+            setFields((prev) =>
+              prev.map((f) =>
+                f.id === updated.id
+                  ? { ...f, value: updated.value, fontFamily: updated.font_family }
+                  : f
+              )
+            );
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'signature_fields',
+          filter: `document_id=eq.${context.document.id}`,
+        },
+        (payload: any) => {
+          const inserted = payload.new;
+          if (inserted) {
+            setFields((prev) => {
+              if (prev.some((f) => f.id === inserted.id)) return prev;
+              return [
                 ...prev,
-                fields: prev.fields.map((f) =>
-                  f.id === updated.id
-                    ? { ...f, value: updated.value, fontFamily: updated.font_family }
-                    : f
-                ),
-              };
+                {
+                  id: inserted.id,
+                  documentId: inserted.document_id,
+                  pageNumber: inserted.page_number,
+                  x: inserted.x,
+                  y: inserted.y,
+                  width: inserted.width,
+                  height: inserted.height,
+                  fieldType: inserted.field_type,
+                  value: inserted.value,
+                  fontFamily: inserted.font_family,
+                  required: inserted.required,
+                  signerId: inserted.signer_id,
+                  signerEmail: inserted.signer_email,
+                  signerOrder: inserted.signer_order,
+                  signerName: inserted.signer_name,
+                },
+              ];
             });
+            if (inserted.value) {
+              setFieldValues((prev) => ({
+                ...prev,
+                [inserted.id]: { value: inserted.value, fontFamily: inserted.font_family },
+              }));
+            }
           }
         }
       )
@@ -212,7 +260,7 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token }) => {
     );
   }
 
-  const { recipient, document: doc, fields } = context;
+  const { recipient, document: doc } = context;
 
   // Check if this recipient already signed previously
   if (recipient.status === 'signed' && !submittedResult) {
@@ -312,39 +360,229 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token }) => {
 
   const myFields = fields.filter(isMyField);
   const myRequiredFields = myFields.filter((f) => f.required);
-  const myPendingFields = myRequiredFields.filter((f) => !fieldValues[f.id]?.value);
-  const filledCount = myRequiredFields.filter((f) => !!fieldValues[f.id]?.value).length;
-  const isAllFilled = filledCount === myRequiredFields.length;
+  const myPendingFields = myRequiredFields.filter((f) => !fieldValues[f.id]?.value && !f.value);
+  const filledCount = myFields.filter((f) => !!(fieldValues[f.id]?.value || f.value)).length;
+  // If pre-assigned fields exist, require them all; if 0 pre-assigned, require at least 1 placed signature
+  const isAllFilled = myRequiredFields.length > 0
+    ? filledCount >= myRequiredFields.length
+    : filledCount > 0;
   const nextPendingField = myPendingFields[0];
+
+  // Dragging event handlers for mouse & touch
+  const startDrag = (fieldId: string, clientX: number, clientY: number, e?: React.SyntheticEvent) => {
+    e?.stopPropagation();
+    if (!containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    const field = fields.find((f) => f.id === fieldId);
+    if (!field) return;
+
+    const fieldPxX = (field.x / 100) * rect.width;
+    const fieldPxY = (field.y / 100) * rect.height;
+
+    setDraggingFieldId(fieldId);
+    setDragOffset({
+      x: clientX - rect.left - fieldPxX,
+      y: clientY - rect.top - fieldPxY,
+    });
+  };
+
+  const onDragMove = (clientX: number, clientY: number) => {
+    if (!draggingFieldId || !containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    const field = fields.find((f) => f.id === draggingFieldId);
+    if (!field) return;
+
+    const mouseX = clientX - rect.left - dragOffset.x;
+    const mouseY = clientY - rect.top - dragOffset.y;
+
+    const pctX = Math.max(0, Math.min(100 - field.width, (mouseX / rect.width) * 100));
+    const pctY = Math.max(0, Math.min(100 - field.height, (mouseY / rect.height) * 100));
+
+    setFields((prev) =>
+      prev.map((f) =>
+        f.id === draggingFieldId
+          ? { ...f, x: Math.round(pctX * 10) / 10, y: Math.round(pctY * 10) / 10 }
+          : f
+      )
+    );
+  };
+
+  useEffect(() => {
+    if (!draggingFieldId) return;
+
+    const handlePointerMove = (e: MouseEvent) => {
+      onDragMove(e.clientX, e.clientY);
+    };
+    const handlePointerUp = () => {
+      setDraggingFieldId(null);
+    };
+    const handleTouchMove = (e: TouchEvent) => {
+      if (e.touches.length === 1) {
+        onDragMove(e.touches[0].clientX, e.touches[0].clientY);
+      }
+    };
+    const handleTouchEnd = () => {
+      setDraggingFieldId(null);
+    };
+
+    window.addEventListener('mousemove', handlePointerMove);
+    window.addEventListener('mouseup', handlePointerUp);
+    window.addEventListener('touchmove', handleTouchMove, { passive: false });
+    window.addEventListener('touchend', handleTouchEnd);
+
+    return () => {
+      window.removeEventListener('mousemove', handlePointerMove);
+      window.removeEventListener('mouseup', handlePointerUp);
+      window.removeEventListener('touchmove', handleTouchMove);
+      window.removeEventListener('touchend', handleTouchEnd);
+    };
+  }, [draggingFieldId, dragOffset]);
 
   const handleOpenSigModal = (fieldId: string) => {
     setActiveSigFieldId(fieldId);
+    setPendingAddCoords(null);
+    setIsSigModalOpen(true);
+  };
+
+  const handleStartAddSignature = (coords?: { x: number; y: number }) => {
+    setPendingAddCoords(coords || null);
+    setActiveSigFieldId(null);
     setIsSigModalOpen(true);
   };
 
   const handleSelectSignature = (dataUrl: string) => {
-    if (!activeSigFieldId) return;
-    setFieldValues((prev) => ({
-      ...prev,
-      [activeSigFieldId]: { value: dataUrl },
-    }));
+    if (activeSigFieldId) {
+      setFieldValues((prev) => ({
+        ...prev,
+        [activeSigFieldId]: { value: dataUrl },
+      }));
+      setFields((prev) =>
+        prev.map((f) => (f.id === activeSigFieldId ? { ...f, value: dataUrl } : f))
+      );
+      useToastStore.getState().showToast('Signature placed', 'success');
+    } else {
+      const newFieldId = `sig_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+      const posX = pendingAddCoords ? pendingAddCoords.x : 32;
+      const posY = pendingAddCoords ? pendingAddCoords.y : 68;
+
+      const newField: SignatureField = {
+        id: newFieldId,
+        documentId: doc.id,
+        pageNumber: currentPage,
+        x: Math.round(posX * 10) / 10,
+        y: Math.round(posY * 10) / 10,
+        width: 35,
+        height: 9,
+        fieldType: 'signature',
+        value: dataUrl,
+        required: true,
+        signerId: recipient.id,
+        signerEmail: recipient.email,
+        signerOrder: recipient.signingOrder,
+        signerName: recipient.name,
+      };
+
+      setFields((prev) => [...prev, newField]);
+      setFieldValues((prev) => ({
+        ...prev,
+        [newFieldId]: { value: dataUrl },
+      }));
+      useToastStore.getState().showToast('Signature placed! Drag to position anywhere.', 'success');
+    }
+
     setIsSigModalOpen(false);
     setActiveSigFieldId(null);
-    useToastStore.getState().showToast('Signature placed', 'success');
+    setPendingAddCoords(null);
+  };
+
+  const handleAddDate = () => {
+    const today = new Date().toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    });
+    const newFieldId = `date_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+
+    const newField: SignatureField = {
+      id: newFieldId,
+      documentId: doc.id,
+      pageNumber: currentPage,
+      x: 35,
+      y: 78,
+      width: 24,
+      height: 5,
+      fieldType: 'date',
+      value: today,
+      required: true,
+      signerId: recipient.id,
+      signerEmail: recipient.email,
+      signerOrder: recipient.signingOrder,
+      signerName: recipient.name,
+    };
+
+    setFields((prev) => [...prev, newField]);
+    setFieldValues((prev) => ({
+      ...prev,
+      [newFieldId]: { value: today },
+    }));
+    useToastStore.getState().showToast('Date placed! Drag to position.', 'success');
+  };
+
+  const handleRemoveField = (fieldId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setFields((prev) => prev.filter((f) => f.id !== fieldId));
+    setFieldValues((prev) => {
+      const copy = { ...prev };
+      delete copy[fieldId];
+      return copy;
+    });
+    useToastStore.getState().showToast('Field removed', 'info');
+  };
+
+  const handleCanvasClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    // If clicking on an existing field, button, or dragging, ignore
+    if ((e.target as HTMLElement).closest('.signature-field-box')) return;
+    if ((e.target as HTMLElement).closest('button')) return;
+    if (draggingFieldId) return;
+
+    if (!containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    const clickX = ((e.clientX - rect.left) / rect.width) * 100;
+    const clickY = ((e.clientY - rect.top) / rect.height) * 100;
+
+    const targetX = Math.max(2, Math.min(65, clickX - 17));
+    const targetY = Math.max(2, Math.min(90, clickY - 4.5));
+
+    handleStartAddSignature({ x: targetX, y: targetY });
   };
 
   const handleFinishSubmit = async () => {
-    if (!isAllFilled) {
+    const myFilled = fields.filter((f) => isMyField(f) && (fieldValues[f.id]?.value || f.value));
+    if (myFilled.length === 0) {
+      useToastStore.getState().showToast('Please place your signature on the document before submitting', 'warning');
+      handleStartAddSignature();
+      return;
+    }
+
+    if (myRequiredFields.length > 0 && !isAllFilled) {
       useToastStore.getState().showToast('Please complete all your required fields before submitting', 'warning');
       return;
     }
 
     setIsSubmitting(true);
     try {
-      const updates = Object.entries(fieldValues).map(([fieldId, data]) => ({
-        fieldId,
-        value: data.value,
-        fontFamily: data.fontFamily,
+      const updates = myFilled.map((f) => ({
+        fieldId: f.id,
+        value: fieldValues[f.id]?.value || f.value || '',
+        fontFamily: fieldValues[f.id]?.fontFamily || f.fontFamily,
+        fieldMeta: {
+          pageNumber: f.pageNumber,
+          x: f.x,
+          y: f.y,
+          width: f.width,
+          height: f.height,
+          fieldType: f.fieldType,
+        },
       }));
 
       const res = await deliveryService.submitSignerFields(token, updates);
@@ -423,12 +661,12 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token }) => {
 
       {/* ── Subheader Controls ─────────────────────────────────── */}
       <div
-        className="px-4 py-2 border-b flex items-center justify-between text-xs"
-        style={{ background: 'var(--bg-paper)', borderColor: 'var(--border-light)' }}
+        className="px-4 py-2 border-b flex flex-wrap items-center justify-between gap-2 text-xs"
+        style={{ background: 'var(--bg-stone)', borderColor: 'var(--border-light)' }}
       >
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           {/* Page controls */}
-          <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-white/70 border border-[var(--border-light)] font-bold">
+          <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-white/80 dark:bg-black/20 border border-[var(--border-light)] font-bold">
             <button
               onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
               disabled={currentPage <= 1}
@@ -447,10 +685,30 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token }) => {
               <ChevronRight className="h-4 w-4" />
             </button>
           </div>
+
+          {/* Quick "Add Signature" Button */}
+          <button
+            onClick={() => handleStartAddSignature()}
+            className="btn-primary text-xs py-1.5 px-3.5 flex items-center gap-1.5 shadow-sm"
+            style={{ background: 'var(--moss)', color: '#F3F4F1' }}
+          >
+            <PenTool className="h-3.5 w-3.5" />
+            <span>+ Add Signature</span>
+          </button>
+
+          {/* Quick "Add Date" Button */}
+          <button
+            onClick={handleAddDate}
+            className="px-2.5 py-1.5 rounded-full text-xs font-bold border border-[var(--border-light)] bg-white/80 dark:bg-black/20 hover:bg-white text-[var(--fg)] flex items-center gap-1 transition-all shadow-xs"
+            title="Add today's date"
+          >
+            <Calendar className="h-3.5 w-3.5 text-[var(--terracotta)]" />
+            <span className="hidden sm:inline">+ Date</span>
+          </button>
         </div>
 
         {/* Zoom */}
-        <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-white/70 border border-[var(--border-light)]">
+        <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-white/80 dark:bg-black/20 border border-[var(--border-light)]">
           <button
             onClick={() => setScale((s) => Math.max(0.7, s - 0.15))}
             className="p-0.5 text-[var(--fg-muted)] hover:text-[var(--fg)]"
@@ -472,47 +730,74 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token }) => {
       </div>
 
       {/* ── PDF Canvas Viewport ──────────────────────────────── */}
-      <main className="flex-1 overflow-auto p-4 sm:p-8 flex justify-center items-start select-none bg-[var(--bg)]">
+      <main className="flex-1 overflow-auto p-4 sm:p-8 flex flex-col items-center select-none bg-[var(--bg)]">
+        {/* Subtle helper instruction */}
+        <div className="text-center text-[11px] text-[var(--fg-muted)] pb-2.5 select-none flex items-center justify-center gap-1.5 font-medium">
+          <PenTool className="h-3 w-3 text-[var(--moss)]" />
+          <span>Tap anywhere on the page to sign, or drag your signature into place.</span>
+        </div>
+
         <div
           ref={containerRef}
-          className="relative inline-block card-organic overflow-hidden shadow-2xl"
+          onClick={handleCanvasClick}
+          className="relative inline-block card-organic overflow-hidden shadow-2xl cursor-crosshair"
           style={{ borderRadius: '0.75rem' }}
+          title="Click anywhere to place signature"
         >
-          <canvas ref={canvasRef} className="block max-w-full" />
+          <canvas ref={canvasRef} className="block max-w-full pointer-events-auto" />
 
           {/* Fields Layer */}
           {currentPageFields.map((field) => {
             const mine = isMyField(field);
             const signerColor = getSignerColor(field.signerOrder);
             const currentVal = fieldValues[field.id]?.value || field.value;
+            const isDraggingThis = draggingFieldId === field.id;
 
             return (
               <div
                 key={field.id}
+                onMouseDown={mine ? (e) => startDrag(field.id, e.clientX, e.clientY, e) : undefined}
+                onTouchStart={
+                  mine
+                    ? (e) => {
+                        if (e.touches.length === 1) {
+                          startDrag(field.id, e.touches[0].clientX, e.touches[0].clientY, e);
+                        }
+                      }
+                    : undefined
+                }
                 style={{
                   left: `${field.x}%`,
                   top: `${field.y}%`,
                   width: `${field.width}%`,
                   height: `${field.height}%`,
                   position: 'absolute',
-                  zIndex: mine ? 25 : 10,
+                  zIndex: isDraggingThis ? 35 : mine ? 25 : 10,
                   border: mine
-                    ? `2px solid ${signerColor}`
+                    ? isDraggingThis
+                      ? `2px solid var(--moss)`
+                      : `2px solid ${signerColor}`
                     : '1.5px dashed rgba(120,120,110,0.35)',
                   borderRadius: 10,
                   background: mine
                     ? currentVal
-                      ? 'rgba(255,255,255,0.85)'
-                      : `${signerColor}12`
+                      ? 'rgba(255,255,255,0.92)'
+                      : `${signerColor}15`
                     : 'rgba(200,200,195,0.15)',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                   padding: 0,
-                  cursor: mine ? 'pointer' : 'not-allowed',
-                  boxShadow: mine && !currentVal ? `0 0 0 3px ${signerColor}25` : 'none',
+                  cursor: mine ? (isDraggingThis ? 'grabbing' : 'grab') : 'not-allowed',
+                  boxShadow: isDraggingThis
+                    ? '0 12px 28px rgba(0,0,0,0.22)'
+                    : mine && !currentVal
+                    ? `0 0 0 3px ${signerColor}25`
+                    : '0 2px 8px rgba(0,0,0,0.06)',
+                  touchAction: 'none',
+                  transition: isDraggingThis ? 'none' : 'box-shadow 0.2s ease, border-color 0.2s ease',
                 }}
-                className={mine && !currentVal ? 'animate-pulse' : ''}
+                className={`signature-field-box group ${mine && !currentVal ? 'animate-pulse' : ''}`}
               >
                 {/* Signer Identification Badge */}
                 <span
@@ -522,6 +807,18 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token }) => {
                   {mine ? 'You' : `Signer ${field.signerOrder || ''}`}
                 </span>
 
+                {/* Remove Field Button (for fields placed by this signer) */}
+                {mine && (
+                  <button
+                    onClick={(e) => handleRemoveField(field.id, e)}
+                    className="absolute -top-2.5 -right-2.5 h-5 w-5 rounded-full bg-rose-500 hover:bg-rose-600 text-white text-[10px] font-bold flex items-center justify-center shadow-md z-40 transition-transform hover:scale-110 opacity-80 hover:opacity-100"
+                    title="Remove field"
+                    aria-label="Remove field"
+                  >
+                    ✕
+                  </button>
+                )}
+
                 {/* Animated "Sign Here" beacon for active unfilled fields */}
                 {mine && !currentVal && (
                   <div
@@ -530,6 +827,14 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token }) => {
                   >
                     <span>Sign Here</span>
                     <span>↓</span>
+                  </div>
+                )}
+
+                {/* Drag to Reposition Indicator */}
+                {mine && currentVal && (
+                  <div className="absolute -bottom-2 right-2 px-1.5 py-0.5 rounded-md bg-black/60 text-white text-[8px] font-bold opacity-70 group-hover:opacity-100 flex items-center gap-0.5 pointer-events-none transition-opacity">
+                    <Move className="h-2 w-2" />
+                    <span>Drag</span>
                   </div>
                 )}
 
@@ -553,7 +858,10 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token }) => {
                   // Interactive Prompt
                   field.fieldType === 'signature' || field.fieldType === 'initials' ? (
                     <button
-                      onClick={() => handleOpenSigModal(field.id)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleOpenSigModal(field.id);
+                      }}
                       className="flex items-center gap-1.5 text-xs font-bold transition-transform hover:scale-105"
                       style={{ color: signerColor }}
                     >
@@ -562,7 +870,8 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token }) => {
                     </button>
                   ) : field.fieldType === 'date' ? (
                     <button
-                      onClick={() => {
+                      onClick={(e) => {
+                        e.stopPropagation();
                         const today = new Date().toLocaleDateString('en-US', {
                           year: 'numeric',
                           month: 'short',
@@ -600,9 +909,10 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token }) => {
       </main>
 
       {/* ── Sticky Mobile/Desktop Signer Navigation Guidance Bar ───────── */}
+      {/* 1. If user has pending required fields */}
       {nextPendingField && (
         <aside className="sticky bottom-4 z-40 px-4 flex justify-center pointer-events-none">
-          <div className="pointer-events-auto max-w-md w-full shadow-2xl rounded-full p-1.5 pl-4 pr-1.5 flex items-center justify-between gap-3 border backdrop-blur-xl animate-slideUp bg-[var(--bg-paper)]/95 border-[var(--border-light)]">
+          <div className="pointer-events-auto max-w-md w-full shadow-2xl rounded-full p-1.5 pl-4 pr-1.5 flex items-center justify-between gap-3 border backdrop-blur-xl animate-slideUp bg-[var(--surface)]/95 border-[var(--border)]">
             <div className="flex items-center gap-2 text-xs truncate">
               <span className="h-2 w-2 rounded-full bg-[var(--terracotta)] animate-ping shrink-0" />
               <span className="font-bold text-[var(--fg)] truncate">
@@ -633,11 +943,53 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token }) => {
         </aside>
       )}
 
-      {/* Notice if no fields assigned to this signer */}
+      {/* 2. If NO fields assigned to this signer yet: provide Add Signature action */}
       {myFields.length === 0 && (
         <aside className="sticky bottom-4 z-40 px-4 flex justify-center pointer-events-none">
-          <div className="pointer-events-auto max-w-md w-full shadow-xl rounded-2xl p-3 text-center border backdrop-blur-xl bg-amber-500/10 border-amber-500/20 text-amber-800 dark:text-amber-300 text-xs">
-            <span>ℹ️ No specific signature fields were assigned to you on this document. You can review the pages and click <strong>Finish & Submit</strong> above.</span>
+          <div className="pointer-events-auto max-w-md w-full shadow-2xl rounded-full p-1.5 pl-4 pr-1.5 flex items-center justify-between gap-3 border backdrop-blur-xl animate-slideUp bg-[var(--surface)]/95 border-[var(--border)]">
+            <div className="flex items-center gap-2 text-xs truncate">
+              <span className="h-2 w-2 rounded-full bg-[var(--moss)] animate-pulse shrink-0" />
+              <span className="font-bold text-[var(--fg)] truncate">
+                Tap anywhere or click to sign
+              </span>
+            </div>
+
+            <button
+              onClick={() => handleStartAddSignature()}
+              className="btn-primary text-xs py-2 px-4 shadow-md flex items-center gap-1.5 shrink-0"
+              style={{ background: 'var(--moss)', color: '#F3F4F1' }}
+            >
+              <PenTool className="h-3.5 w-3.5" />
+              <span>Add Signature ✍️</span>
+            </button>
+          </div>
+        </aside>
+      )}
+
+      {/* 3. If signer has placed signature and all required fields are filled */}
+      {myFields.length > 0 && isAllFilled && !nextPendingField && (
+        <aside className="sticky bottom-4 z-40 px-4 flex justify-center pointer-events-none">
+          <div className="pointer-events-auto max-w-md w-full shadow-2xl rounded-full p-1.5 pl-4 pr-1.5 flex items-center justify-between gap-3 border backdrop-blur-xl animate-slideUp bg-[var(--surface)]/95 border-[var(--border)]">
+            <div className="flex items-center gap-2 text-xs truncate">
+              <span className="h-2 w-2 rounded-full bg-[var(--moss)] shrink-0" />
+              <span className="font-bold text-[var(--fg)] truncate">
+                ✓ Ready! Drag to position or submit
+              </span>
+            </div>
+
+            <button
+              onClick={handleFinishSubmit}
+              disabled={isSubmitting}
+              className="btn-primary text-xs py-2 px-4 shadow-md flex items-center gap-1.5 shrink-0"
+              style={{ background: 'var(--moss)', color: '#F3F4F1' }}
+            >
+              {isSubmitting ? (
+                <span className="animate-spin rounded-full h-3.5 w-3.5 border-2 border-white border-t-transparent" />
+              ) : (
+                <Send className="h-3.5 w-3.5" />
+              )}
+              <span>Finish & Submit</span>
+            </button>
           </div>
         </aside>
       )}

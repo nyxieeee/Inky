@@ -1,5 +1,5 @@
 // Inky Delivery Service — Local-First + Supabase Multi-Signer Workflow
-import { Recipient, Document, SignatureField } from '../types';
+import { Recipient, Document, SignatureField, FieldType } from '../types';
 import * as storage from '../lib/storage';
 import { uid } from '../utils';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
@@ -386,21 +386,66 @@ export const deliveryService = {
 
   async submitSignerFields(
     token: string,
-    fieldUpdates: { fieldId: string; value: string; fontFamily?: string }[]
+    fieldUpdates: {
+      fieldId: string;
+      value: string;
+      fontFamily?: string;
+      fieldMeta?: {
+        pageNumber: number;
+        x: number;
+        y: number;
+        width: number;
+        height: number;
+        fieldType?: FieldType;
+      };
+    }[]
   ): Promise<{ success: boolean; message: string; allComplete: boolean }> {
     const ctx = await this.getSignerContext(token);
     if (!ctx) throw new Error('Invalid signing session');
 
     const { recipient, document, fields } = ctx;
 
-    // Update field values
-    const updatedFields = fields.map((f) => {
-      const up = fieldUpdates.find((u) => u.fieldId === f.id);
-      if (up) {
-        return { ...f, value: up.value, fontFamily: up.fontFamily || f.fontFamily };
+    // Update existing field values and merge dynamically placed fields
+    const updatedFields: SignatureField[] = [...fields];
+
+    for (const up of fieldUpdates) {
+      const existingIdx = updatedFields.findIndex((f) => f.id === up.fieldId);
+      if (existingIdx >= 0) {
+        updatedFields[existingIdx] = {
+          ...updatedFields[existingIdx],
+          value: up.value,
+          fontFamily: up.fontFamily || updatedFields[existingIdx].fontFamily,
+          ...(up.fieldMeta
+            ? {
+                x: up.fieldMeta.x,
+                y: up.fieldMeta.y,
+                width: up.fieldMeta.width,
+                height: up.fieldMeta.height,
+                pageNumber: up.fieldMeta.pageNumber,
+              }
+            : {}),
+        };
+      } else if (up.fieldMeta) {
+        // Dynamically added field by the signer
+        updatedFields.push({
+          id: up.fieldId,
+          documentId: document.id,
+          pageNumber: up.fieldMeta.pageNumber || 1,
+          x: up.fieldMeta.x ?? 30,
+          y: up.fieldMeta.y ?? 70,
+          width: up.fieldMeta.width ?? 34,
+          height: up.fieldMeta.height ?? 9,
+          fieldType: up.fieldMeta.fieldType || 'signature',
+          value: up.value,
+          fontFamily: up.fontFamily,
+          required: true,
+          signerId: recipient.id,
+          signerEmail: recipient.email,
+          signerOrder: recipient.signingOrder,
+          signerName: recipient.name,
+        });
       }
-      return f;
-    });
+    }
     storage.saveLocalDocumentFields(document.id, updatedFields);
 
     // Update recipient status
@@ -427,10 +472,35 @@ export const deliveryService = {
           .eq('token', token);
 
         for (const up of fieldUpdates) {
-          await supabase
-            .from('signature_fields')
-            .update({ value: up.value, font_family: up.fontFamily })
-            .eq('id', up.fieldId);
+          const existing = fields.find((f) => f.id === up.fieldId);
+          if (existing) {
+            await supabase
+              .from('signature_fields')
+              .update({
+                value: up.value,
+                font_family: up.fontFamily,
+                ...(up.fieldMeta ? { x: up.fieldMeta.x, y: up.fieldMeta.y } : {}),
+              })
+              .eq('id', up.fieldId);
+          } else if (up.fieldMeta) {
+            await supabase.from('signature_fields').insert({
+              id: up.fieldId,
+              document_id: document.id,
+              page_number: up.fieldMeta.pageNumber || 1,
+              x: up.fieldMeta.x ?? 30,
+              y: up.fieldMeta.y ?? 70,
+              width: up.fieldMeta.width ?? 34,
+              height: up.fieldMeta.height ?? 9,
+              field_type: up.fieldMeta.fieldType || 'signature',
+              value: up.value,
+              font_family: up.fontFamily,
+              required: true,
+              signer_id: recipient.id,
+              signer_email: recipient.email,
+              signer_order: recipient.signingOrder,
+              signer_name: recipient.name,
+            });
+          }
         }
 
         await supabase

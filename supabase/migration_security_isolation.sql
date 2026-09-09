@@ -67,3 +67,27 @@ CREATE POLICY "Recipients can view document"
             WHERE r.document_id = documents.id
         )
     );
+
+-- 5. Allow signers to add/update/delete signature fields when signing anywhere
+DROP POLICY IF EXISTS "Recipients can insert signature_fields" ON public.signature_fields;
+CREATE POLICY "Recipients can insert signature_fields"
+    ON public.signature_fields FOR INSERT
+    TO anon
+    WITH CHECK (
+        EXISTS (
+            SELECT 1 FROM public.document_recipients r
+            WHERE r.document_id = signature_fields.document_id
+        )
+    );
+
+DROP POLICY IF EXISTS "Recipients can delete signature_fields" ON public.signature_fields;
+CREATE POLICY "Recipients can delete signature_fields"
+    ON public.signature_fields FOR DELETE
+    TO anon
+    USING (
+        EXISTS (
+            SELECT 1 FROM public.document_recipients r
+            WHERE r.document_id = signature_fields.document_id
+        )
+    );
+
