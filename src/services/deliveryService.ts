@@ -12,6 +12,131 @@ export interface DispatchedRecipient extends Recipient {
   emailBody: string;
 }
 
+/**
+ * Ensures the document record, PDF file, signature fields, and recipients
+ * are all synced to Supabase so that remote signers can access them.
+ * This MUST be awaited before generating signing links.
+ */
+async function ensureCloudSync(docId: string, recipients: Recipient[]): Promise<void> {
+  if (!isSupabaseConfigured() || !supabase) {
+    console.warn('Supabase not configured — signing links will only work in this browser.');
+    return;
+  }
+
+  // Get the authenticated user
+  const { data: userData } = await supabase.auth.getUser();
+  const userId = userData?.user?.id;
+  if (!userId) {
+    console.warn('User not authenticated — cloud sync skipped. Remote signers will not be able to access the document.');
+    return;
+  }
+
+  const doc = storage.getLocalDocuments().find((d) => d.id === docId);
+  if (!doc) return;
+
+  // 1. Ensure document record exists in Supabase
+  const { data: existingDoc } = await supabase
+    .from('documents')
+    .select('id')
+    .eq('id', docId)
+    .maybeSingle();
+
+  if (!existingDoc) {
+    // Upload PDF to storage first
+    const pdfBytes = await storage.getPdfBytes(docId);
+    if (pdfBytes) {
+      const cloudPath = `${userId}/${docId}.pdf`;
+      const pdfFile = new File([pdfBytes as any], `${docId}.pdf`, { type: 'application/pdf' });
+      const { error: uploadErr } = await supabase.storage
+        .from('documents')
+        .upload(cloudPath, pdfFile, { upsert: true });
+      if (uploadErr) {
+        console.error('Failed to upload PDF to Supabase Storage:', uploadErr);
+      }
+
+      // Insert document record
+      const { error: insertErr } = await supabase.from('documents').insert({
+        id: docId,
+        user_id: userId,
+        title: doc.title,
+        original_file_name: doc.originalFileName || doc.title,
+        file_path: cloudPath,
+        page_count: doc.pageCount || 1,
+        status: doc.status || 'draft',
+        source: doc.source || 'uploaded',
+      });
+      if (insertErr) {
+        console.error('Failed to insert document to Supabase:', insertErr);
+      }
+    }
+  } else {
+    // Document exists — ensure PDF is in storage
+    const { data: docRecord } = await supabase
+      .from('documents')
+      .select('file_path')
+      .eq('id', docId)
+      .maybeSingle();
+
+    if (docRecord && !docRecord.file_path) {
+      const pdfBytes = await storage.getPdfBytes(docId);
+      if (pdfBytes) {
+        const cloudPath = `${userId}/${docId}.pdf`;
+        const pdfFile = new File([pdfBytes as any], `${docId}.pdf`, { type: 'application/pdf' });
+        await supabase.storage.from('documents').upload(cloudPath, pdfFile, { upsert: true });
+        await supabase.from('documents').update({ file_path: cloudPath }).eq('id', docId);
+      }
+    }
+  }
+
+  // 2. Sync signature fields
+  const fields = storage.getLocalDocumentFields(docId);
+  if (fields.length > 0) {
+    // Delete existing and re-insert to avoid conflicts
+    await supabase.from('signature_fields').delete().eq('document_id', docId);
+    const fieldRows = fields.map((f) => ({
+      id: f.id,
+      document_id: docId,
+      page_number: f.pageNumber,
+      x: f.x,
+      y: f.y,
+      width: f.width,
+      height: f.height,
+      field_type: f.fieldType,
+      value: f.value,
+      font_family: f.fontFamily,
+      required: f.required,
+      signer_id: f.signerId,
+      signer_email: f.signerEmail,
+      signer_order: f.signerOrder,
+    }));
+    const { error: fieldsErr } = await supabase.from('signature_fields').insert(fieldRows);
+    if (fieldsErr) {
+      console.error('Failed to sync fields to Supabase:', fieldsErr);
+    }
+  }
+
+  // 3. Sync recipients
+  if (recipients.length > 0) {
+    const recipientRows = recipients.map((r) => ({
+      id: r.id,
+      document_id: r.documentId,
+      email: r.email,
+      name: r.name,
+      signing_order: r.signingOrder,
+      status: r.status,
+      token: r.token,
+    }));
+    const { error: recErr } = await supabase
+      .from('document_recipients')
+      .upsert(recipientRows);
+    if (recErr) {
+      console.error('Failed to sync recipients to Supabase:', recErr);
+    }
+  }
+
+  console.log('✅ Cloud sync complete for document', docId);
+}
+
 export const deliveryService = {
   getRecipients(docId: string): Recipient[] {
     return storage.getLocalDocumentRecipients(docId);
@@ -30,24 +155,7 @@ export const deliveryService = {
 
     storage.saveLocalDocumentRecipients(docId, list);
 
-    // If Supabase is configured, sync to cloud
-    if (isSupabaseConfigured() && supabase) {
-      try {
-        const rows = list.map((r) => ({
-          id: r.id,
-          document_id: r.documentId,
-          email: r.email,
-          name: r.name,
-          signing_order: r.signingOrder,
-          status: r.status,
-          token: r.token,
-        }));
-        await supabase.from('document_recipients').upsert(rows);
-      } catch (e) {
-        console.warn('Supabase recipient sync notice (using local storage):', e);
-      }
-    }
-
+    // Cloud sync of recipients happens in sendDocument via ensureCloudSync
     return list;
   },
 
@@ -55,6 +163,9 @@ export const deliveryService = {
     const rawRecipients = storage.getLocalDocumentRecipients(docId);
     const docs = storage.getLocalDocuments();
     const doc = docs.find((d) => d.id === docId);
+
+    // ── CRITICAL: Sync everything to Supabase BEFORE generating links ──
+    await ensureCloudSync(docId, rawRecipients);
     
     if (doc) {
       doc.status = 'sent';
