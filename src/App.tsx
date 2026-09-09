@@ -203,10 +203,10 @@ export function App() {
       <>
         <LoginPage
           onNavigateHome={() => {
-            if (isLocalhost) {
+            if (isLocalhost && !user) {
               setGuestMode(true);
-              navigateTo('/');
             }
+            navigateTo('/');
           }}
         />
         <Toast />

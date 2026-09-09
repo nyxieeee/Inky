@@ -19,8 +19,9 @@ interface AuthState {
   signInWithGoogle: () => Promise<{ success: boolean; error?: string }>;
   signInWithDemoGoogle: () => void;
   signInWithMagicLink: (email: string) => Promise<{ success: boolean; error?: string }>;
-  signInWithPassword: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
-  signUpWithPassword: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  signInWithPassword: (email: string, password: string) => Promise<{ success: boolean; error?: string; session?: Session | null; user?: User | null }>;
+  signUpWithPassword: (email: string, password: string, fullName?: string) => Promise<{ success: boolean; error?: string; session?: Session | null; needsConfirmation?: boolean }>;
+  resetPasswordForEmail: (email: string) => Promise<{ success: boolean; error?: string }>;
   signOut: () => Promise<void>;
 }
 
@@ -163,7 +164,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   signInWithPassword: async (email: string, password: string) => {
     if (!supabase) {
-      return { success: false, error: 'Supabase is not configured yet.' };
+      const msg = 'Supabase is not configured yet. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in your environment.';
+      useToastStore.getState().showToast(msg, 'error');
+      return { success: false, error: msg };
     }
 
     set({ isLoading: true });
@@ -173,7 +176,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
       set({ user: data.user, session: data.session, isAuthModalOpen: false });
       useToastStore.getState().showToast(`Welcome back, ${data.user.email}!`, 'success');
-      return { success: true };
+      return { success: true, session: data.session, user: data.user };
     } catch (err: any) {
       const msg = err.message || 'Failed to sign in';
       useToastStore.getState().showToast(msg, 'error');
@@ -183,9 +186,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
   },
 
-  signUpWithPassword: async (email: string, password: string) => {
+  signUpWithPassword: async (email: string, password: string, fullName?: string) => {
     if (!supabase) {
-      return { success: false, error: 'Supabase is not configured yet.' };
+      const msg = 'Supabase is not configured yet. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in your environment.';
+      useToastStore.getState().showToast(msg, 'error');
+      return { success: false, error: msg };
     }
 
     set({ isLoading: true });
@@ -193,7 +198,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
-        options: { emailRedirectTo: window.location.origin },
+        options: {
+          emailRedirectTo: window.location.origin,
+          data: fullName ? { full_name: fullName, name: fullName } : undefined,
+        },
       });
 
       if (error) throw error;
@@ -201,12 +209,37 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       if (data.session) {
         set({ user: data.user, session: data.session, isAuthModalOpen: false });
         useToastStore.getState().showToast('Account created and signed in!', 'success');
+        return { success: true, session: data.session, user: data.user };
       } else {
         useToastStore.getState().showToast('Account created! Please check your email to confirm.', 'info');
+        return { success: true, session: null, needsConfirmation: true };
       }
-      return { success: true };
     } catch (err: any) {
       const msg = err.message || 'Failed to sign up';
+      useToastStore.getState().showToast(msg, 'error');
+      return { success: false, error: msg };
+    } finally {
+      set({ isLoading: false });
+    }
+  },
+
+  resetPasswordForEmail: async (email: string) => {
+    if (!supabase) {
+      const msg = 'Supabase is not configured yet. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in your environment.';
+      useToastStore.getState().showToast(msg, 'error');
+      return { success: false, error: msg };
+    }
+
+    set({ isLoading: true });
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: window.location.origin,
+      });
+      if (error) throw error;
+      useToastStore.getState().showToast('Password reset email sent! Check your inbox.', 'success');
+      return { success: true };
+    } catch (err: any) {
+      const msg = err.message || 'Failed to send reset email';
       useToastStore.getState().showToast(msg, 'error');
       return { success: false, error: msg };
     } finally {

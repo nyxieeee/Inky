@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   Mail, Lock, Sparkles, Shield, AlertCircle, ArrowLeft,
-  ArrowRight, Check, HelpCircle, ChevronDown, ChevronUp, UserCheck
+  ArrowRight, Check, HelpCircle, ChevronDown, ChevronUp, UserCheck, User
 } from 'lucide-react';
 import { useAuthStore } from '../store/useAuthStore';
 
@@ -45,13 +45,23 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigateHome }) => {
     signInWithDemoGoogle,
     signInWithPassword,
     signUpWithPassword,
+    resetPasswordForEmail,
     signOut,
   } = useAuthStore();
 
-  const [mode, setMode] = useState<'password' | 'signup'>('password');
+  const [mode, setMode] = useState<'password' | 'signup' | 'forgot'>('password');
+  const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [authSuccess, setAuthSuccess] = useState<string | null>(null);
   const [showConfigHelp, setShowConfigHelp] = useState(false);
+
+  const switchMode = (newMode: 'password' | 'signup' | 'forgot') => {
+    setMode(newMode);
+    setAuthError(null);
+    setAuthSuccess(null);
+  };
 
   const handleGoogleSignIn = async () => {
     if (!isConfigured) {
@@ -63,12 +73,56 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigateHome }) => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email.trim()) return;
+    setAuthError(null);
+    setAuthSuccess(null);
+
+    const cleanEmail = email.trim();
+    if (!cleanEmail) {
+      setAuthError('Please enter your email address.');
+      return;
+    }
+
+    if (mode === 'forgot') {
+      const res = await resetPasswordForEmail(cleanEmail);
+      if (res.success) {
+        setAuthSuccess('Password reset link sent! Check your inbox for the reset link.');
+      } else {
+        setAuthError(res.error || 'Failed to send reset email.');
+      }
+      return;
+    }
+
+    if (!password) {
+      setAuthError('Please enter your password.');
+      return;
+    }
+
+    if (mode === 'signup' && password.length < 6) {
+      setAuthError('Password must be at least 6 characters long.');
+      return;
+    }
 
     if (mode === 'password') {
-      await signInWithPassword(email, password);
-    } else {
-      await signUpWithPassword(email, password);
+      const res = await signInWithPassword(cleanEmail, password);
+      if (res.success) {
+        onNavigateHome();
+      } else {
+        setAuthError(res.error || 'Failed to sign in. Please verify your email and password.');
+      }
+    } else if (mode === 'signup') {
+      const res = await signUpWithPassword(cleanEmail, password, fullName.trim() || undefined);
+      if (res.success) {
+        if (res.session) {
+          onNavigateHome();
+        } else {
+          setAuthSuccess(
+            `Account created! A verification link was sent to ${cleanEmail}. Please check your inbox to confirm your email, then sign in.`
+          );
+          setMode('password');
+        }
+      } else {
+        setAuthError(res.error || 'Failed to create account. This email may already be in use.');
+      }
     }
   };
 
@@ -309,18 +363,18 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigateHome }) => {
               <div className="flex gap-1 p-1 rounded-full bg-[var(--bg-stone)]">
                 <button
                   type="button"
-                  onClick={() => setMode('password')}
+                  onClick={() => switchMode('password')}
                   className="flex-1 py-1.5 rounded-full text-xs font-bold transition-all duration-200 cursor-pointer"
                   style={{
-                    background: mode === 'password' ? 'var(--moss)' : 'transparent',
-                    color: mode === 'password' ? '#ffffff' : 'var(--fg-muted)',
+                    background: mode === 'password' || mode === 'forgot' ? 'var(--moss)' : 'transparent',
+                    color: mode === 'password' || mode === 'forgot' ? '#ffffff' : 'var(--fg-muted)',
                   }}
                 >
                   Sign In
                 </button>
                 <button
                   type="button"
-                  onClick={() => setMode('signup')}
+                  onClick={() => switchMode('signup')}
                   className="flex-1 py-1.5 rounded-full text-xs font-bold transition-all duration-200 cursor-pointer"
                   style={{
                     background: mode === 'signup' ? 'var(--moss)' : 'transparent',
@@ -333,7 +387,46 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigateHome }) => {
 
               {/* Email / Password Form */}
               <form onSubmit={handleSubmit} className="space-y-4">
+                {/* Error Banner */}
+                {authError && (
+                  <div className="p-3 rounded-2xl bg-rose-50 border border-rose-200 text-xs text-rose-700 flex items-start gap-2 animate-fadeIn">
+                    <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-500" />
+                    <span className="leading-snug">{authError}</span>
+                  </div>
+                )}
+
+                {/* Success Banner */}
+                {authSuccess && (
+                  <div className="p-3 rounded-2xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 flex items-start gap-2 animate-fadeIn">
+                    <Check className="w-4 h-4 shrink-0 mt-0.5 text-emerald-600" />
+                    <span className="leading-snug">{authSuccess}</span>
+                  </div>
+                )}
+
                 <div className="space-y-3">
+                  {/* Full Name for Registration */}
+                  {mode === 'signup' && (
+                    <div className="animate-fadeIn">
+                      <label className="block text-xs font-bold mb-1.5" style={{ color: 'var(--fg-muted)' }}>
+                        Full Name <span className="text-[10px] font-normal text-[var(--fg-subtle)]">(Optional)</span>
+                      </label>
+                      <div className="relative">
+                        <User
+                          className="absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none"
+                          style={{ height: 15, width: 15, color: 'var(--fg-muted)' }}
+                        />
+                        <input
+                          type="text"
+                          value={fullName}
+                          onChange={(e) => setFullName(e.target.value)}
+                          placeholder="Jane Doe"
+                          className="input-organic pl-10 h-11 text-xs"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Email Field */}
                   <div>
                     <label className="block text-xs font-bold mb-1.5" style={{ color: 'var(--fg-muted)' }}>
                       Email Address
@@ -354,26 +447,49 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigateHome }) => {
                     </div>
                   </div>
 
-                  <div>
-                    <label className="block text-xs font-bold mb-1.5" style={{ color: 'var(--fg-muted)' }}>
-                      Password
-                    </label>
-                    <div className="relative">
-                      <Lock
-                        className="absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none"
-                        style={{ height: 15, width: 15, color: 'var(--fg-muted)' }}
-                      />
-                      <input
-                        type="password"
-                        required
-                        minLength={6}
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        placeholder="••••••••"
-                        className="input-organic pl-10 h-11 text-xs"
-                      />
+                  {/* Password Field (hidden in 'forgot' mode) */}
+                  {mode !== 'forgot' ? (
+                    <div>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <label className="text-xs font-bold" style={{ color: 'var(--fg-muted)' }}>
+                          Password
+                        </label>
+                        {mode === 'password' && (
+                          <button
+                            type="button"
+                            onClick={() => switchMode('forgot')}
+                            className="text-[11px] font-bold text-[var(--moss)] hover:underline cursor-pointer"
+                          >
+                            Forgot password?
+                          </button>
+                        )}
+                      </div>
+                      <div className="relative">
+                        <Lock
+                          className="absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none"
+                          style={{ height: 15, width: 15, color: 'var(--fg-muted)' }}
+                        />
+                        <input
+                          type="password"
+                          required
+                          minLength={6}
+                          value={password}
+                          onChange={(e) => setPassword(e.target.value)}
+                          placeholder="••••••••"
+                          className="input-organic pl-10 h-11 text-xs"
+                        />
+                      </div>
+                      {mode === 'signup' && (
+                        <p className="text-[10px] text-[var(--fg-subtle)] mt-1 pl-1">
+                          Must be at least 6 characters.
+                        </p>
+                      )}
                     </div>
-                  </div>
+                  ) : (
+                    <p className="text-xs text-[var(--fg-muted)]">
+                      We will send a password reset link to your email address.
+                    </p>
+                  )}
                 </div>
 
                 <button
@@ -386,14 +502,25 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigateHome }) => {
                   ) : (
                     <>
                       <span>
-                        {mode === 'password'
-                          ? 'Sign In'
-                          : 'Create Account'}
+                        {mode === 'password' && 'Sign In'}
+                        {mode === 'signup' && 'Create Account'}
+                        {mode === 'forgot' && 'Send Reset Link'}
                       </span>
                       <ArrowRight style={{ height: 15, width: 15 }} />
                     </>
                   )}
                 </button>
+
+                {mode === 'forgot' && (
+                  <button
+                    type="button"
+                    onClick={() => switchMode('password')}
+                    className="text-xs font-bold text-[var(--moss)] hover:underline flex items-center justify-center gap-1 mx-auto pt-1 cursor-pointer"
+                  >
+                    <ArrowLeft style={{ height: 13, width: 13 }} />
+                    <span>Back to Sign In</span>
+                  </button>
+                )}
               </form>
 
               <p className="text-[11px] text-center" style={{ color: 'var(--fg-muted)' }}>
