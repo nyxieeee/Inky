@@ -26,6 +26,7 @@ interface DocumentState {
   signAndExport: (options?: { signerEmail?: string; signerName?: string; addAuditPage?: boolean }) => Promise<any>;
   deleteDocument: (id: string) => Promise<void>;
   clearSelection: () => void;
+  resetStore: () => void;
 }
 
 export const useDocumentStore = create<DocumentState>((set, get) => ({
@@ -152,5 +153,15 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
 
   clearSelection: () => {
     set({ selectedDoc: null, fields: [], activeTab: 'dashboard' });
+  },
+
+  resetStore: () => {
+    set({
+      documents: [],
+      selectedDoc: null,
+      fields: [],
+      activeTab: 'dashboard',
+      searchQuery: '',
+    });
   },
 }));

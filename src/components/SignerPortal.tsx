@@ -312,8 +312,10 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token }) => {
 
   const myFields = fields.filter(isMyField);
   const myRequiredFields = myFields.filter((f) => f.required);
+  const myPendingFields = myRequiredFields.filter((f) => !fieldValues[f.id]?.value);
   const filledCount = myRequiredFields.filter((f) => !!fieldValues[f.id]?.value).length;
   const isAllFilled = filledCount === myRequiredFields.length;
+  const nextPendingField = myPendingFields[0];
 
   const handleOpenSigModal = (fieldId: string) => {
     setActiveSigFieldId(fieldId);
@@ -392,18 +394,18 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token }) => {
         </div>
 
         {/* Completion Status + Finish Button */}
-        <div className="flex items-center gap-3">
-          <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-[var(--bg-stone)] border border-[var(--border-light)] text-xs font-semibold">
-            <span className="text-[var(--fg-muted)]">Progress:</span>
+        <div className="flex items-center gap-2 sm:gap-3">
+          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[var(--bg-stone)] border border-[var(--border-light)] text-[10px] sm:text-xs font-semibold">
+            <span className="text-[var(--fg-muted)]">Fields:</span>
             <span className="font-bold text-[var(--terracotta)]">
-              {filledCount} / {myRequiredFields.length} Completed
+              {filledCount} / {myRequiredFields.length}
             </span>
           </div>
 
           <button
             onClick={handleFinishSubmit}
             disabled={!isAllFilled || isSubmitting}
-            className="btn-primary text-xs sm:text-sm py-2 px-4 shadow-sm"
+            className="btn-primary text-xs sm:text-sm py-2 px-3 sm:px-4 shadow-sm"
             style={{
               opacity: !isAllFilled || isSubmitting ? 0.6 : 1,
               cursor: !isAllFilled || isSubmitting ? 'not-allowed' : 'pointer',
@@ -520,6 +522,17 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token }) => {
                   {mine ? 'You' : `Signer ${field.signerOrder || ''}`}
                 </span>
 
+                {/* Animated "Sign Here" beacon for active unfilled fields */}
+                {mine && !currentVal && (
+                  <div
+                    className="absolute -top-7 left-1/2 -translate-x-1/2 px-2.5 py-0.5 rounded-full text-[10px] font-bold text-white shadow-md z-30 flex items-center gap-1 animate-bounce pointer-events-none whitespace-nowrap"
+                    style={{ background: 'var(--terracotta)' }}
+                  >
+                    <span>Sign Here</span>
+                    <span>↓</span>
+                  </div>
+                )}
+
                 {/* Field Content */}
                 {currentVal ? (
                   currentVal.startsWith('data:image') ? (
@@ -585,6 +598,49 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token }) => {
           })}
         </div>
       </main>
+
+      {/* ── Sticky Mobile/Desktop Signer Navigation Guidance Bar ───────── */}
+      {nextPendingField && (
+        <aside className="sticky bottom-4 z-40 px-4 flex justify-center pointer-events-none">
+          <div className="pointer-events-auto max-w-md w-full shadow-2xl rounded-full p-1.5 pl-4 pr-1.5 flex items-center justify-between gap-3 border backdrop-blur-xl animate-slideUp bg-[var(--bg-paper)]/95 border-[var(--border-light)]">
+            <div className="flex items-center gap-2 text-xs truncate">
+              <span className="h-2 w-2 rounded-full bg-[var(--terracotta)] animate-ping shrink-0" />
+              <span className="font-bold text-[var(--fg)] truncate">
+                {nextPendingField.pageNumber !== currentPage
+                  ? `Signature is on Page ${nextPendingField.pageNumber}`
+                  : `Signature field ready on this page`}
+              </span>
+            </div>
+
+            <button
+              onClick={() => {
+                if (nextPendingField.pageNumber !== currentPage) {
+                  setCurrentPage(nextPendingField.pageNumber);
+                } else {
+                  handleOpenSigModal(nextPendingField.id);
+                }
+              }}
+              className="py-2 px-4 rounded-full text-xs font-bold text-white flex items-center gap-1.5 transition-all duration-200 hover:scale-105 shadow-md shrink-0"
+              style={{ background: 'var(--terracotta)' }}
+            >
+              <span>
+                {nextPendingField.pageNumber !== currentPage
+                  ? `Go to Page ${nextPendingField.pageNumber} →`
+                  : `Sign Here ✍️`}
+              </span>
+            </button>
+          </div>
+        </aside>
+      )}
+
+      {/* Notice if no fields assigned to this signer */}
+      {myFields.length === 0 && (
+        <aside className="sticky bottom-4 z-40 px-4 flex justify-center pointer-events-none">
+          <div className="pointer-events-auto max-w-md w-full shadow-xl rounded-2xl p-3 text-center border backdrop-blur-xl bg-amber-500/10 border-amber-500/20 text-amber-800 dark:text-amber-300 text-xs">
+            <span>ℹ️ No specific signature fields were assigned to you on this document. You can review the pages and click <strong>Finish & Submit</strong> above.</span>
+          </div>
+        </aside>
+      )}
 
       {/* Signature Modal */}
       <SignaturePadModal

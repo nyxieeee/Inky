@@ -101,9 +101,10 @@ export async function removePdfBytes(id: string): Promise<void> {
 }
 
 // ── Document Storage ───────────────────────────────────────────────────────
-export function getLocalDocuments(): Document[] {
+export function getLocalDocuments(userId?: string): Document[] {
   try {
-    const raw = localStorage.getItem(DOCUMENTS_KEY);
+    const key = userId && userId !== 'guest' ? `inky_docs_${userId}` : DOCUMENTS_KEY;
+    const raw = localStorage.getItem(key);
     return raw ? JSON.parse(raw) : [];
   } catch (e) {
     console.error('Failed to parse local documents:', e);
@@ -111,20 +112,24 @@ export function getLocalDocuments(): Document[] {
   }
 }
 
-export function saveLocalDocumentMeta(doc: Document): void {
-  const docs = getLocalDocuments();
+export function saveLocalDocumentMeta(doc: Document, userId?: string): void {
+  const targetUserId = userId || (doc.ownerId && doc.ownerId !== 'local_user' ? doc.ownerId : 'guest');
+  const key = targetUserId !== 'guest' ? `inky_docs_${targetUserId}` : DOCUMENTS_KEY;
+  const docs = getLocalDocuments(targetUserId);
   const index = docs.findIndex((d) => d.id === doc.id);
   if (index >= 0) {
     docs[index] = doc;
   } else {
     docs.unshift(doc);
   }
-  localStorage.setItem(DOCUMENTS_KEY, JSON.stringify(docs));
+  localStorage.setItem(key, JSON.stringify(docs));
 }
 
-export async function deleteLocalDocumentRecord(id: string): Promise<void> {
-  const docs = getLocalDocuments().filter((d) => d.id !== id);
-  localStorage.setItem(DOCUMENTS_KEY, JSON.stringify(docs));
+export async function deleteLocalDocumentRecord(id: string, userId?: string): Promise<void> {
+  const targetUserId = userId || 'guest';
+  const key = targetUserId !== 'guest' ? `inky_docs_${targetUserId}` : DOCUMENTS_KEY;
+  const docs = getLocalDocuments(targetUserId).filter((d) => d.id !== id);
+  localStorage.setItem(key, JSON.stringify(docs));
   localStorage.removeItem(`inky_fields_${id}`);
   localStorage.removeItem(`inky_recipients_${id}`);
   await removePdfBytes(id);

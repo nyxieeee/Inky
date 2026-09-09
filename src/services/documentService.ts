@@ -10,16 +10,30 @@ const blobUrlCache = new Map<string, string>();
 
 export const documentService = {
   async listDocuments(params?: { status?: string; source?: string; search?: string }): Promise<Document[]> {
-    let docs = storage.getLocalDocuments();
-
+    let currentUserId = 'guest';
     if (isSupabaseConfigured() && supabase) {
       try {
+        const { data: userData } = await supabase.auth.getUser();
+        if (userData?.user?.id) {
+          currentUserId = userData.user.id;
+        }
+      } catch (e) {
+        console.warn('Could not read user in listDocuments:', e);
+      }
+    }
+
+    let docs = storage.getLocalDocuments(currentUserId);
+
+    if (isSupabaseConfigured() && supabase && currentUserId !== 'guest') {
+      try {
+        // STRICT USER ISOLATION: Only select documents belonging to the authenticated user!
         const { data, error } = await supabase
           .from('documents')
           .select('*')
+          .eq('user_id', currentUserId)
           .order('created_at', { ascending: false });
 
-        if (!error && data && data.length > 0) {
+        if (!error && data) {
           const cloudDocs: Document[] = data.map((d: any) => ({
             id: d.id,
             ownerId: d.user_id,
@@ -36,7 +50,8 @@ export const documentService = {
           }));
 
           const mergedMap = new Map<string, Document>();
-          docs.forEach((d) => mergedMap.set(d.id, d));
+          // Only include local docs that match current user
+          docs.filter((d) => !d.ownerId || d.ownerId === currentUserId).forEach((d) => mergedMap.set(d.id, d));
           cloudDocs.forEach((d) => mergedMap.set(d.id, { ...mergedMap.get(d.id), ...d }));
           docs = Array.from(mergedMap.values()).sort(
             (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()

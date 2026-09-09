@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { useToastStore } from './useToastStore';
+import { useDocumentStore } from './useDocumentStore';
 
 interface AuthState {
   user: User | null;
@@ -53,10 +54,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       });
 
       // Subscribe to auth state changes
-      supabase.auth.onAuthStateChange((_event, session) => {
+      supabase.auth.onAuthStateChange((event, session) => {
+        const prevUser = get().user;
+        const nextUser = session?.user || null;
+        if (event === 'SIGNED_OUT' || (prevUser && (!nextUser || prevUser.id !== nextUser.id))) {
+          useDocumentStore.getState().resetStore();
+        }
         set({
           session,
-          user: session?.user || null,
+          user: nextUser,
         });
       });
     } catch (e: any) {
@@ -251,6 +257,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     if (supabase) {
       await supabase.auth.signOut();
     }
+    useDocumentStore.getState().resetStore();
     set({ user: null, session: null });
     useToastStore.getState().showToast('Signed out successfully.', 'info');
   },
