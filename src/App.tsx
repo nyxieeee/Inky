@@ -91,25 +91,51 @@ export function App() {
 
   // Path navigation & Route detection
   const [currentPath, setCurrentPath] = useState(window.location.pathname);
+  const [currentSearch, setCurrentSearch] = useState(window.location.search);
+  const [currentHash, setCurrentHash] = useState(window.location.hash);
 
   useEffect(() => {
     const handlePopState = () => {
       setCurrentPath(window.location.pathname);
+      setCurrentSearch(window.location.search);
+      setCurrentHash(window.location.hash);
     };
     window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
+    window.addEventListener('hashchange', handlePopState);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+      window.removeEventListener('hashchange', handlePopState);
+    };
   }, []);
 
   const navigateTo = (path: string) => {
     window.history.pushState({}, '', path);
     setCurrentPath(path);
+    setCurrentSearch(window.location.search);
+    setCurrentHash(window.location.hash);
   };
 
-  const isInboxRoute = currentPath.startsWith('/inbox-submit/');
-  const inboundToken = isInboxRoute ? currentPath.split('/inbox-submit/')[1] : null;
+  // Extract signToken from /sign/:token, ?sign=:token, or #/sign/:token
+  const searchParams = new URLSearchParams(currentSearch);
+  const querySignToken = searchParams.get('sign');
+  const queryInboxToken = searchParams.get('inbox');
 
-  const isSignRoute = currentPath.startsWith('/sign/');
-  const signToken = isSignRoute ? currentPath.split('/sign/')[1] : null;
+  const hashSignToken = currentHash.startsWith('#/sign/') ? currentHash.slice(7) : null;
+  const hashInboxToken = currentHash.startsWith('#/inbox-submit/') ? currentHash.slice(14) : null;
+
+  const pathSignToken = currentPath.startsWith('/sign/')
+    ? currentPath.split('/sign/')[1]?.split('?')[0]
+    : null;
+  const pathInboxToken = currentPath.startsWith('/inbox-submit/')
+    ? currentPath.split('/inbox-submit/')[1]?.split('?')[0]
+    : null;
+
+  const signToken = pathSignToken || querySignToken || hashSignToken;
+  const isSignRoute = Boolean(signToken);
+
+  const inboundToken = pathInboxToken || queryInboxToken || hashInboxToken;
+  const isInboxRoute = Boolean(inboundToken);
+
   const isPublicRoute = isInboxRoute || isSignRoute;
 
   // Inbox links list

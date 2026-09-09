@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { X, Send, UserPlus, Trash2, Users, CheckCircle2, Mail, Share2, Copy, Check, ExternalLink } from 'lucide-react';
+import { X, Send, UserPlus, Trash2, Users, CheckCircle2, Mail, Share2, Copy, Check, ExternalLink, CloudOff, Info } from 'lucide-react';
 import { deliveryService } from '../services/deliveryService';
 import { useToastStore } from '../store/useToastStore';
+import { isSupabaseConfigured } from '../lib/supabase';
 
 interface MultiSignerPanelProps {
   documentId: string;
@@ -169,12 +170,24 @@ export const MultiSignerPanel: React.FC<MultiSignerPanelProps> = ({
               </div>
               <div>
                 <h4 className="font-display font-bold text-lg" style={{ color: 'var(--fg)' }}>
-                  Document Dispatched!
+                  Signing Links Ready!
                 </h4>
                 <p className="text-xs mt-1" style={{ color: 'var(--fg-muted)' }}>
-                  Unique signing links sent to each recipient.
+                  Click <strong>Send with Gmail</strong> or copy the link below to deliver the invitation.
                 </p>
               </div>
+
+              {!isSupabaseConfigured() && (
+                <div
+                  className="p-3 rounded-2xl text-[11px] text-left flex items-start gap-2"
+                  style={{ background: 'rgba(217, 158, 75, 0.12)', border: '1px solid rgba(217, 158, 75, 0.3)', color: '#8C5E1A' }}
+                >
+                  <Info className="h-4 w-4 shrink-0 mt-0.5" />
+                  <span>
+                    <strong>Offline / Local Mode:</strong> Because cloud sync (Supabase) is not configured, this link works in this browser. To send documents across different devices/phones, add your Supabase project keys to Vercel Environment Variables.
+                  </span>
+                </div>
+              )}
               <div className="space-y-3 text-left max-h-60 overflow-y-auto pr-1">
                 {sentResult.recipients?.map((item: any, i: number) => (
                   <div

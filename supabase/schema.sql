@@ -148,6 +148,36 @@ CREATE POLICY "Public can insert inbound documents with valid token"
         )
     );
 
+-- Anonymous signers can view document associated with their recipient record
+CREATE POLICY "Recipients can view document"
+    ON public.documents
+    FOR SELECT
+    TO anon
+    USING (
+        EXISTS (
+            SELECT 1 FROM public.document_recipients r
+            WHERE r.document_id = documents.id
+        )
+    );
+
+-- Anonymous signers can update document status upon completion
+CREATE POLICY "Recipients can update document status"
+    ON public.documents
+    FOR UPDATE
+    TO anon
+    USING (
+        EXISTS (
+            SELECT 1 FROM public.document_recipients r
+            WHERE r.document_id = documents.id
+        )
+    )
+    WITH CHECK (
+        EXISTS (
+            SELECT 1 FROM public.document_recipients r
+            WHERE r.document_id = documents.id
+        )
+    );
+
 -- ── Signature Fields Policies ──
 CREATE POLICY "Owner can do all on signature_fields"
     ON public.signature_fields
@@ -165,6 +195,36 @@ CREATE POLICY "Owner can do all on signature_fields"
             SELECT 1 FROM public.documents d
             WHERE d.id = signature_fields.document_id
               AND d.user_id = auth.uid()
+        )
+    );
+
+-- Anonymous signers can view signature fields for their document
+CREATE POLICY "Recipients can view signature_fields"
+    ON public.signature_fields
+    FOR SELECT
+    TO anon
+    USING (
+        EXISTS (
+            SELECT 1 FROM public.document_recipients r
+            WHERE r.document_id = signature_fields.document_id
+        )
+    );
+
+-- Anonymous signers can update signature fields with their signature values
+CREATE POLICY "Recipients can update signature_fields"
+    ON public.signature_fields
+    FOR UPDATE
+    TO anon
+    USING (
+        EXISTS (
+            SELECT 1 FROM public.document_recipients r
+            WHERE r.document_id = signature_fields.document_id
+        )
+    )
+    WITH CHECK (
+        EXISTS (
+            SELECT 1 FROM public.document_recipients r
+            WHERE r.document_id = signature_fields.document_id
         )
     );
 
@@ -213,6 +273,13 @@ CREATE POLICY "Owner can manage documents bucket"
     TO authenticated
     USING (bucket_id = 'documents' AND (storage.foldername(name))[1] = auth.uid()::text)
     WITH CHECK (bucket_id = 'documents' AND (storage.foldername(name))[1] = auth.uid()::text);
+
+-- External signers can read PDFs in the documents bucket to review and sign them
+CREATE POLICY "Signers can download document PDFs"
+    ON storage.objects
+    FOR SELECT
+    TO anon
+    USING (bucket_id = 'documents');
 
 -- External Senders can upload PDFs into the inbound bucket
 CREATE POLICY "Public can upload to inbound bucket"
