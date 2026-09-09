@@ -92,26 +92,9 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigateHome }) => {
         />
       </div>
 
-      {/* Top Bar Navigation */}
-      <header className="w-full max-w-5xl mx-auto flex items-center justify-between z-10 px-2 sm:px-4">
-        {/* Brand Logo on the Left */}
-        <div className="flex items-center gap-2.5 select-none">
-          <img
-            src="/inky-mark.png"
-            alt="Inky Logo"
-            className="h-8.5 w-auto object-contain drop-shadow-sm"
-            style={{ height: '34px' }}
-          />
-          <img
-            src="/inky-wordmark.png"
-            alt="Inky"
-            className="h-5 w-auto object-contain"
-            style={{ height: '22px' }}
-          />
-        </div>
-
-        {/* Right side: Only show Guest button on localhost, else Cloud Security Badge */}
-        {isLocalhost ? (
+      {/* Top Bar Navigation: only shown on localhost for dev bypass */}
+      {isLocalhost && (
+        <header className="w-full max-w-5xl mx-auto flex items-center justify-end z-10 px-2 sm:px-4">
           <button
             type="button"
             onClick={onNavigateHome}
@@ -127,13 +110,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigateHome }) => {
             <span className="text-xs font-bold">Continue as Guest</span>
             <ArrowRight style={{ height: 14, width: 14, color: 'var(--moss)' }} />
           </button>
-        ) : (
-          <div className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold text-[var(--fg-muted)] bg-white/60 border border-[var(--border-light)] shadow-xs">
-            <Shield className="w-3.5 h-3.5 text-[var(--moss)]" />
-            <span>Secure Cloud E-Sign</span>
-          </div>
-        )}
-      </header>
+        </header>
+      )}
 
       {/* Main Content Area */}
       <main className="w-full max-w-md mx-auto my-auto py-6 z-10 animate-slideUp flex flex-col items-center justify-center">
