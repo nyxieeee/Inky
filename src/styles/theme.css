@@ -73,7 +73,7 @@
   }
 
   html, body, button, input, select, textarea {
-    font-family: 'Philosopher', serif !important;
+    font-family: 'Philosopher', serif;
   }
 
   body {

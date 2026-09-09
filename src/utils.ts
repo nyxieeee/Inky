@@ -151,3 +151,68 @@ export function processUploadedSignature(dataUrl: string): Promise<string> {
   });
 }
 
+/**
+ * Combines a signature image with a printed name underneath ("Signature over Printed Name")
+ * Clean format: signature on top, printed name directly below without divider line, clear legible font.
+ */
+export async function combineSignatureAndName(
+  sigDataUrl: string,
+  name: string,
+  textColor: string,
+  fontFamily = 'Inter, system-ui, -apple-system, sans-serif'
+): Promise<string> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        resolve(sigDataUrl);
+        return;
+      }
+
+      const scale = 2;
+      const fontSize = 25 * scale;
+      const font = `700 ${fontSize}px ${fontFamily}`;
+
+      ctx.font = font;
+      const cleanName = name.trim().toUpperCase();
+      const textMetrics = ctx.measureText(cleanName);
+      const textWidth = textMetrics.width;
+
+      const sigW = img.width * scale;
+      const sigH = img.height * scale;
+
+      const paddingX = 24 * scale;
+      const contentWidth = Math.max(sigW, textWidth);
+      const totalWidth = contentWidth + paddingX * 2;
+      const gap = 10 * scale;
+      const textHeight = fontSize * 1.25;
+      const totalHeight = sigH + gap + textHeight + (10 * scale);
+
+      canvas.width = Math.round(totalWidth);
+      canvas.height = Math.round(totalHeight);
+
+      // Re-apply styles after resizing canvas
+      ctx.font = font;
+      ctx.fillStyle = textColor;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+
+      // 1. Draw signature centered at top
+      const sigX = (totalWidth - sigW) / 2;
+      ctx.drawImage(img, sigX, 4 * scale, sigW, sigH);
+
+      // 2. Draw printed name directly below signature (no line)
+      const textY = (4 * scale) + sigH + gap;
+      ctx.fillText(cleanName, totalWidth / 2, textY);
+
+      resolve(trimCanvas(canvas, 6));
+    };
+    img.onerror = () => resolve(sigDataUrl);
+    img.src = sigDataUrl;
+  });
+}
+
+

@@ -21,6 +21,7 @@ interface DropdownProps<T = string | number> {
   buttonClassName?: string;
   menuClassName?: string;
   direction?: 'down' | 'up';
+  align?: 'left' | 'right';
 }
 
 export function Dropdown<T = string | number>({
@@ -33,6 +34,7 @@ export function Dropdown<T = string | number>({
   buttonClassName = '',
   menuClassName = '',
   direction = 'down',
+  align = 'left',
 }: DropdownProps<T>) {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -135,7 +137,7 @@ export function Dropdown<T = string | number>({
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: direction === 'up' ? 4 : -4, scale: 0.98 }}
               transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
-              className={`absolute left-0 w-full z-[100] max-h-72 overflow-y-auto p-1.5 rounded-[1.75rem] shadow-2xl ${
+              className={`absolute ${align === 'right' ? 'right-0' : 'left-0'} w-full z-[100] max-h-72 overflow-y-auto p-1.5 rounded-[1.75rem] shadow-2xl ${
                 direction === 'up' ? 'bottom-full mb-2' : 'top-full mt-2'
               } ${menuClassName}`}
               style={{

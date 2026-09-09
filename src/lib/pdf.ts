@@ -50,6 +50,110 @@ export async function getPdfInfo(pdfBytes: Uint8Array): Promise<{ pageCount: num
 }
 
 /**
+ * Renders text to a high-resolution transparent PNG image in the browser,
+ * perfectly matching CSS font family, font-weight, size, and center alignment.
+ */
+async function renderTextToPng(
+  text: string,
+  widthPt: number,
+  heightPt: number,
+  fontFamily: string = 'Inter',
+  colorHex: string = '#2C2C24'
+): Promise<Uint8Array | null> {
+  if (typeof document === 'undefined') return null;
+
+  try {
+    if (document.fonts && document.fonts.ready) {
+      await document.fonts.ready;
+    }
+  } catch {
+    // Ignore font loading errors
+  }
+
+  // 4x DPR provides crisp 288 DPI print-quality resolution in the exported PDF
+  const dpr = 4;
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(widthPt * dpr));
+  canvas.height = Math.max(1, Math.round(heightPt * dpr));
+
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+
+  const cleanFamily = (fontFamily || 'Inter').replace(/['"]/g, '');
+  const isCursive =
+    cleanFamily.includes('Dancing') ||
+    cleanFamily.includes('Caveat') ||
+    cleanFamily.includes('Script') ||
+    cleanFamily.includes('Brush') ||
+    cleanFamily.includes('Vibes');
+
+  // Proportional font sizing:
+  // 10.5pt matches standard 12px (text-xs) in the editor;
+  // 11.5pt for cursive gives equal visual weight.
+  const basePt = isCursive ? 11.5 : 10.5;
+  let targetPt = Math.min(basePt, heightPt * 0.65);
+  targetPt = Math.max(5, targetPt);
+
+  let fontPx = targetPt * dpr;
+  const fontWeight = isCursive ? '700' : '600';
+  const fontSpec = `${fontWeight} ${fontPx}px "${cleanFamily}", cursive, sans-serif`;
+
+  try {
+    if (document.fonts && document.fonts.load) {
+      await document.fonts.load(fontSpec);
+    }
+  } catch {
+    // Ignore
+  }
+
+  ctx.font = fontSpec;
+
+  const lines = text.split('\n');
+  const maxLineWidth = widthPt * dpr * 0.94;
+
+  // Scale down font size if text exceeds container width
+  let widest = 0;
+  lines.forEach((line) => {
+    const w = ctx.measureText(line).width;
+    if (w > widest) widest = w;
+  });
+
+  if (widest > maxLineWidth && widest > 0) {
+    const scaleFactor = maxLineWidth / widest;
+    fontPx = Math.max(5 * dpr, fontPx * scaleFactor);
+    ctx.font = `${fontWeight} ${fontPx}px "${cleanFamily}", cursive, sans-serif`;
+  }
+
+  ctx.fillStyle = colorHex;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  const lineHeightPx = fontPx * 1.25;
+  const totalHeight = lines.length * lineHeightPx;
+  const startY = (canvas.height - totalHeight) / 2 + lineHeightPx / 2;
+
+  lines.forEach((line, idx) => {
+    ctx.fillText(line, canvas.width / 2, startY + idx * lineHeightPx);
+  });
+
+  return new Promise((resolve) => {
+    canvas.toBlob((blob) => {
+      if (!blob) {
+        resolve(null);
+        return;
+      }
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const ab = reader.result as ArrayBuffer;
+        resolve(new Uint8Array(ab));
+      };
+      reader.onerror = () => resolve(null);
+      reader.readAsArrayBuffer(blob);
+    }, 'image/png');
+  });
+}
+
+/**
  * Flattens signatures, initials, and date fields into PDF bytes directly in the browser
  */
 export async function flattenPdfSignatures(
@@ -64,7 +168,7 @@ export async function flattenPdfSignatures(
   const pageCount = pdfDoc.getPageCount();
 
   for (const field of fields) {
-    if (!field.value) continue;
+    if (!field.value || !field.value.trim()) continue;
     const pageIndex = field.pageNumber - 1;
     if (pageIndex < 0 || pageIndex >= pageCount) continue;
 
@@ -77,12 +181,14 @@ export async function flattenPdfSignatures(
     // In PDF coordinate system, (0,0) is bottom-left, whereas canvas (0,0) is top-left
     const y = pageHeight - ((field.y / 100) * pageHeight) - h;
 
-    if (field.fieldType === 'signature' || field.fieldType === 'initials') {
+    if (field.value.startsWith('data:image')) {
       try {
-        // field.value is data:image/png;base64,...
+        // Signature, initials, or drawn/uploaded stamp image
         const base64Data = field.value.split(',')[1] || field.value;
         const imgBytes = Uint8Array.from(atob(base64Data), (c) => c.charCodeAt(0));
-        const img = await pdfDoc.embedPng(imgBytes);
+        const isJpg =
+          field.value.startsWith('data:image/jpeg') || field.value.startsWith('data:image/jpg');
+        const img = isJpg ? await pdfDoc.embedJpg(imgBytes) : await pdfDoc.embedPng(imgBytes);
 
         // Preserve aspect ratio (contain within bounding box)
         const imgAspect = img.width / img.height;
@@ -112,24 +218,41 @@ export async function flattenPdfSignatures(
         console.error('Failed to embed signature image:', err);
       }
     } else {
-      // Text or date field
-      const fontSize = Math.max(10, Math.min(18, h * 0.7));
+      // Text, date, name, or text-based field
+      const textPngBytes = await renderTextToPng(field.value, w, h, field.fontFamily || 'Inter');
+      if (textPngBytes) {
+        try {
+          const textImg = await pdfDoc.embedPng(textPngBytes);
+          page.drawImage(textImg, {
+            x,
+            y,
+            width: w,
+            height: h,
+          });
+          continue;
+        } catch (err) {
+          console.error('Failed to embed text PNG image:', err);
+        }
+      }
+
+      // Graceful fallback if canvas rendering is unavailable
+      const fontSize = Math.min(10.5, Math.max(7, h * 0.65));
       let selectedPdfFont = helvetica;
       const ff = (field.fontFamily || '').toLowerCase();
       if (ff.includes('times') || ff.includes('garamond') || ff.includes('serif')) {
         selectedPdfFont = timesRoman;
       } else if (ff.includes('courier') || ff.includes('mono')) {
         selectedPdfFont = courier;
-      } else {
-        selectedPdfFont = helvetica;
       }
-
+      const textWidth = selectedPdfFont.widthOfTextAtSize(field.value, fontSize);
+      const textX = x + Math.max(0, (w - textWidth) / 2);
+      const textY = y + (h - fontSize) / 2;
       page.drawText(field.value, {
-        x: x + 4,
-        y: y + (h - fontSize) / 2,
+        x: textX,
+        y: textY,
         size: fontSize,
         font: selectedPdfFont,
-        color: rgb(0.15, 0.15, 0.15),
+        color: rgb(44 / 255, 44 / 255, 36 / 255),
       });
     }
   }

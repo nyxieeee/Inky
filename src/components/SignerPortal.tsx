@@ -462,7 +462,7 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token }) => {
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  padding: 4,
+                  padding: 0,
                   cursor: mine ? 'pointer' : 'not-allowed',
                   boxShadow: mine && !currentVal ? `0 0 0 3px ${signerColor}25` : 'none',
                 }}

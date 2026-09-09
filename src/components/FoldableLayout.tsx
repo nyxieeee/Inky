@@ -83,24 +83,20 @@ export const FoldableLayout: React.FC<FoldableLayoutProps> = ({
           role="navigation"
           aria-label="Main navigation"
         >
-          <button
-            onClick={() => setActiveTab('dashboard')}
-            className="flex items-center gap-2.5 group focus:outline-none"
-            aria-label="Go to dashboard"
-          >
+          <div className="flex items-center gap-2.5 select-none cursor-default">
             <img
               src="/inky-mark.png"
               alt="Inky Logo"
-              className="h-8.5 w-auto object-contain transition-transform duration-300 group-hover:scale-105"
+              className="h-8.5 w-auto object-contain pointer-events-none"
               style={{ height: '34px' }}
             />
             <img
               src="/inky-wordmark.png"
               alt="Inky"
-              className="h-6 w-auto object-contain hidden sm:block"
+              className="h-6 w-auto object-contain hidden sm:block pointer-events-none"
               style={{ height: '23px' }}
             />
-          </button>
+          </div>
 
 
 

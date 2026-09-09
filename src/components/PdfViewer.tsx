@@ -66,6 +66,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
   const [currentPage, setCurrentPage]     = useState<number>(1);
   const [scale, setScale]                 = useState<number>(1.2);
   const [selectedFieldId, setSelectedFieldId] = useState<string | null>(null);
+  const [hoveredFieldId, setHoveredFieldId]   = useState<string | null>(null);
   const [isDragging, setIsDragging]       = useState<boolean>(false);
   const [dragOffset, setDragOffset]       = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [isResizing, setIsResizing]       = useState<boolean>(false);
@@ -91,8 +92,29 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
     }
   }, [documentId]);
 
-  const canvasRef    = useRef<HTMLCanvasElement | null>(null);
-  const containerRef = useRef<HTMLDivElement | null>(null);
+  const canvasRef          = useRef<HTMLCanvasElement | null>(null);
+  const containerRef       = useRef<HTMLDivElement | null>(null);
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+
+  // Pan / Drag to move document state
+  const [isPanning, setIsPanning] = useState<boolean>(false);
+  const panStartRef = useRef<{ x: number; y: number; scrollLeft: number; scrollTop: number }>({
+    x: 0,
+    y: 0,
+    scrollLeft: 0,
+    scrollTop: 0,
+  });
+  const hasPannedRef = useRef<boolean>(false);
+
+  useEffect(() => {
+    const handleGlobalMouseUp = () => {
+      setIsDragging(false);
+      setIsResizing(false);
+      setIsPanning(false);
+    };
+    window.addEventListener('mouseup', handleGlobalMouseUp);
+    return () => window.removeEventListener('mouseup', handleGlobalMouseUp);
+  }, []);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -189,9 +211,13 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
     const rect  = containerRef.current.getBoundingClientRect();
     const field = fields.find((f) => f.id === fieldId);
     if (!field) return;
+    const clickX = e.clientX - rect.left;
+    const clickY = e.clientY - rect.top;
+    const fieldPixelX = (field.x / 100) * rect.width;
+    const fieldPixelY = (field.y / 100) * rect.height;
     setDragOffset({
-      x: e.clientX - (field.x / 100) * rect.width,
-      y: e.clientY - (field.y / 100) * rect.height,
+      x: clickX - fieldPixelX,
+      y: clickY - fieldPixelY,
     });
   };
 
@@ -209,13 +235,41 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
     });
   };
 
+  const handleScrollAreaMouseDown = (e: React.MouseEvent) => {
+    // Only handle primary (left) button or middle button
+    if (e.button !== 0 && e.button !== 1) return;
+    if (!scrollContainerRef.current) return;
+
+    setIsPanning(true);
+    hasPannedRef.current = false;
+    panStartRef.current = {
+      x: e.clientX,
+      y: e.clientY,
+      scrollLeft: scrollContainerRef.current.scrollLeft,
+      scrollTop: scrollContainerRef.current.scrollTop,
+    };
+  };
+
   const handleMouseMove = (e: React.MouseEvent) => {
+    if (isPanning && scrollContainerRef.current) {
+      const dx = e.clientX - panStartRef.current.x;
+      const dy = e.clientY - panStartRef.current.y;
+      if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+        hasPannedRef.current = true;
+      }
+      scrollContainerRef.current.scrollLeft = panStartRef.current.scrollLeft - dx;
+      scrollContainerRef.current.scrollTop  = panStartRef.current.scrollTop  - dy;
+      return;
+    }
+
     if (!selectedFieldId || !containerRef.current) return;
     const rect = containerRef.current.getBoundingClientRect();
 
     if (isDragging) {
-      const pctX = Math.max(0, Math.min(92, ((e.clientX - dragOffset.x) / rect.width) * 100));
-      const pctY = Math.max(0, Math.min(95, ((e.clientY - dragOffset.y) / rect.height) * 100));
+      const mouseX = e.clientX - rect.left;
+      const mouseY = e.clientY - rect.top;
+      const pctX = Math.max(0, Math.min(92, ((mouseX - dragOffset.x) / rect.width) * 100));
+      const pctY = Math.max(0, Math.min(95, ((mouseY - dragOffset.y) / rect.height) * 100));
       setFields((prev) => prev.map((f) => (f.id === selectedFieldId ? { ...f, x: pctX, y: pctY } : f)));
     } else if (isResizing) {
       const deltaX = ((e.clientX - resizeStart.x) / rect.width) * 100;
@@ -239,6 +293,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
   const handleMouseUp = () => {
     setIsDragging(false);
     setIsResizing(false);
+    setIsPanning(false);
   };
 
   const currentPageFields = fields.filter((f) => f.pageNumber === currentPage);
@@ -247,11 +302,11 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
     setIsSigDropdownOpen(false);
     const img = new Image();
     img.onload = () => {
-      const naturalAspect = img.naturalWidth / img.naturalHeight;
-      const defaultHeight = 7.5;
+      const naturalAspect = img.naturalWidth / (img.naturalHeight || 1);
+      const defaultHeight = naturalAspect < 2.0 ? 10.5 : 7.5;
       const rect = containerRef.current?.getBoundingClientRect();
       const pageAspect = rect ? rect.height / rect.width : 1.4;
-      const targetWidth = Math.min(48, Math.max(12, defaultHeight * pageAspect * naturalAspect));
+      const targetWidth = Math.min(48, Math.max(14, defaultHeight * pageAspect * naturalAspect));
 
       const newField: SignatureField = {
         id: `field_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
@@ -306,6 +361,15 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
     </button>
   );
 
+  const signerOptions = [
+    { value: '0', label: 'Assign: Anyone / Owner' },
+    ...recipients.map((r) => ({
+      value: String(r.signingOrder),
+      label: `Signer ${r.signingOrder}: ${r.name}`,
+    })),
+    { value: '__add__', label: '+ Add / Edit Signers...' },
+  ];
+
   return (
     <div
       className="card-organic rounded-[2rem] overflow-hidden flex flex-col"
@@ -313,13 +377,17 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
     >
       {/* ── Floating Toolbar ─────────────────────────────── */}
       <div
-        className="glass px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 z-30 relative"
-        style={{ borderBottom: '1px solid var(--border-light)' }}
+        className="glass px-4 flex items-center justify-between gap-3 z-30 relative shrink-0 overflow-visible"
+        style={{
+          height: 50,
+          minHeight: 50,
+          borderBottom: '1px solid var(--border-light)',
+        }}
       >
         {/* Field type tools */}
-        <div className="flex items-center gap-1.5 py-0.5">
+        <div className="flex items-center gap-1.5 shrink-0 overflow-visible">
           {/* + Sig Dropdown Menu */}
-          <div className="relative" ref={sigDropdownRef}>
+          <div className="relative z-50 overflow-visible" ref={sigDropdownRef}>
             <button
               onClick={() => {
                 setSavedSignatures(getSavedSignatures());
@@ -349,7 +417,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
 
             {isSigDropdownOpen && (
               <div
-                className="absolute top-full left-0 mt-2 w-72 rounded-[1.75rem] p-2.5 z-50 animate-fadeIn"
+                className="absolute top-full left-0 mt-2 w-72 rounded-[1.75rem] p-2.5 z-[100] animate-fadeIn"
                 style={{
                   background: 'var(--surface)',
                   border: '1px solid var(--border)',
@@ -400,85 +468,10 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
           </div>
           {toolBtn('+ Date',     <Calendar style={{ height: 13, width: 13 }} />, () => addField('date'))}
           {toolBtn('+ Text',     <Type     style={{ height: 13, width: 13 }} />, () => addField('text'))}
-
-          {/* Active Text Field Font Selector */}
-          {(() => {
-            const activeField = fields.find((f) => f.id === selectedFieldId);
-            if (activeField && (activeField.fieldType === 'text' || activeField.fieldType === 'date' || activeField.fieldType === 'name')) {
-              return (
-                <div className="flex items-center gap-1.5 pl-2 ml-1 border-l border-[var(--border)] animate-fadeIn">
-                  <span className="text-[11px] font-bold hidden sm:inline" style={{ color: 'var(--fg-muted)' }}>Font:</span>
-                  <div className="w-36 sm:w-44">
-                    <Dropdown
-                      value={activeField.fontFamily || 'Inter'}
-                      onChange={(val) => {
-                        const font = String(val);
-                        setFields((prev) =>
-                          prev.map((f) => (f.id === activeField.id ? { ...f, fontFamily: font } : f))
-                        );
-                      }}
-                      options={TEXT_FONT_OPTIONS}
-                      buttonClassName="py-1 px-3 text-xs bg-white/80"
-                    />
-                  </div>
-                </div>
-              );
-            }
-            return null;
-          })()}
-
-          {/* Active Field Signer Assignment Selector */}
-          {(() => {
-            const activeField = fields.find((f) => f.id === selectedFieldId);
-            if (!activeField) return null;
-
-            const signerOptions = [
-              { value: '0', label: 'Assign: Anyone / Owner' },
-              ...recipients.map((r) => ({
-                value: String(r.signingOrder),
-                label: `Signer ${r.signingOrder}: ${r.name}`,
-              })),
-              { value: '__add__', label: '+ Add / Edit Signers...' },
-            ];
-
-            return (
-              <div className="flex items-center gap-1.5 pl-2 ml-1 border-l border-[var(--border)] animate-fadeIn">
-                <Users style={{ height: 12, width: 12, color: 'var(--fg-muted)' }} />
-                <div className="w-36 sm:w-44">
-                  <Dropdown
-                    value={String(activeField.signerOrder || 0)}
-                    onChange={(val) => {
-                      if (val === '__add__') {
-                        onSendClick();
-                        return;
-                      }
-                      const order = Number(val);
-                      const targetRec = recipients.find((r) => r.signingOrder === order);
-                      setFields((prev) =>
-                        prev.map((f) =>
-                          f.id === activeField.id
-                            ? {
-                                ...f,
-                                signerOrder: order === 0 ? undefined : order,
-                                signerName: targetRec?.name,
-                                signerEmail: targetRec?.email,
-                                signerId: targetRec?.id,
-                              }
-                            : f
-                        )
-                      );
-                    }}
-                    options={signerOptions}
-                    buttonClassName="py-1 px-2.5 text-xs bg-white/80"
-                  />
-                </div>
-              </div>
-            );
-          })()}
         </div>
 
         {/* Controls */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           {/* Page nav */}
           <div
             className="flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-semibold"
@@ -514,9 +507,14 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
             >
               <ZoomOut style={{ height: 14, width: 14 }} />
             </button>
-            <span className="font-mono font-bold text-[11px] w-10 text-center" style={{ color: 'var(--fg)' }}>
+            <button
+              onClick={() => setScale(1.0)}
+              title="Click to reset to 100%"
+              className="font-mono font-bold text-[11px] w-10 text-center hover:text-[var(--moss)] transition-colors cursor-pointer"
+              style={{ color: 'var(--fg)' }}
+            >
               {Math.round(scale * 100)}%
-            </span>
+            </button>
             <button
               onClick={() => setScale((s) => Math.min(2.5, s + 0.15))}
               style={{ color: 'var(--fg-muted)' }}
@@ -579,27 +577,60 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
 
         {/* PDF Canvas + Field Overlay */}
         <div
-          className="flex-1 overflow-auto p-4 sm:p-8 flex justify-center items-start select-none"
-          style={{ background: 'var(--bg)' }}
+          ref={scrollContainerRef}
+          className={`flex-1 overflow-auto p-4 sm:p-8 select-none ${
+            isPanning ? 'cursor-grabbing' : 'cursor-grab'
+          }`}
+          style={{
+            background: 'var(--bg)',
+            scrollbarWidth: 'thin',
+            scrollbarColor: 'var(--moss) rgba(0,0,0,0.06)',
+            touchAction: 'pan-x pan-y',
+          }}
+          onMouseDown={handleScrollAreaMouseDown}
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
-          onMouseLeave={handleMouseUp}
+          onClick={() => {
+            if (hasPannedRef.current) return;
+            setSelectedFieldId(null);
+          }}
         >
-          <div
-            ref={containerRef}
-            className="relative inline-block"
-            style={{ boxShadow: '0 8px 48px rgba(44,44,36,0.12)' }}
-          >
-            <canvas ref={canvasRef} className="block max-w-full" />
+          <div className="min-w-full min-h-full w-fit flex items-center justify-center m-auto">
+            <div
+              ref={containerRef}
+              className="relative block shrink-0 m-auto"
+              style={{ boxShadow: '0 8px 48px rgba(44,44,36,0.12)' }}
+            >
+              <canvas ref={canvasRef} className="block pointer-events-none" />
 
             {/* Field Overlay */}
             {currentPageFields.map((field) => {
               const fieldSignerColor = getSignerColor(field.signerOrder);
+              const isSelected = selectedFieldId === field.id;
+              const isHovered  = hoveredFieldId === field.id;
+              const hasValue   = Boolean(field.value);
+
+              let borderStyle = '2px dashed transparent';
+              if (isSelected) {
+                borderStyle = `2px solid ${fieldSignerColor}`;
+              } else if (!hasValue) {
+                borderStyle = `2px dashed ${fieldSignerColor}99`;
+              } else if (isHovered) {
+                borderStyle = `2px dashed ${fieldSignerColor}80`;
+              }
+
               return (
               <div
                 key={field.id}
-                onMouseDown={(e) => handleMouseDown(field.id, e)}
-                onClick={() => setSelectedFieldId(field.id)}
+                onMouseEnter={() => setHoveredFieldId(field.id)}
+                onMouseLeave={() => setHoveredFieldId(null)}
+                onMouseDown={(e) => {
+                  handleMouseDown(field.id, e);
+                }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setSelectedFieldId(field.id);
+                }}
                 style={{
                   left:     `${field.x}%`,
                   top:      `${field.y}%`,
@@ -607,29 +638,31 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
                   height:   `${field.height}%`,
                   position: 'absolute',
                   cursor:   'move',
-                  zIndex:   selectedFieldId === field.id ? 20 : 10,
-                  border:   selectedFieldId === field.id
-                    ? `2px solid ${fieldSignerColor}`
-                    : `2px dashed ${fieldSignerColor}99`,
+                  zIndex:   isSelected ? 20 : 10,
+                  border:   borderStyle,
                   borderRadius: 10,
-                  background: field.signerOrder ? `${fieldSignerColor}08` : 'transparent',
+                  background: isSelected
+                    ? `${fieldSignerColor}0c`
+                    : (!hasValue ? (field.signerOrder ? `${fieldSignerColor}08` : 'rgba(93,112,82,0.04)') : 'transparent'),
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  padding: 4,
-                  transition: 'border-color 0.2s ease',
+                  padding: 0,
+                  transition: 'border-color 0.15s ease',
                 }}
                 className="group"
               >
                 {/* Signer Tag Badge */}
-                {field.signerOrder ? (
+                {field.signerOrder && (
                   <span
-                    className="absolute -top-2.5 left-2 px-2 py-0.5 rounded-full text-[9px] font-bold text-white shadow-xs z-30 pointer-events-none truncate max-w-[120px]"
+                    className={`absolute -top-2.5 left-2 px-2 py-0.5 rounded-full text-[9px] font-bold text-white shadow-xs z-30 pointer-events-none truncate max-w-[120px] transition-opacity duration-150 ${
+                      isSelected || !hasValue ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+                    }`}
                     style={{ background: fieldSignerColor }}
                   >
                     {field.signerName ? `${field.signerOrder}: ${field.signerName}` : `Signer ${field.signerOrder}`}
                   </span>
-                ) : null}
+                )}
                 {field.value ? (
                   field.value.startsWith('data:image') ? (
                     <img
@@ -637,9 +670,18 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
                       alt="Signature"
                       className="h-full w-full object-contain pointer-events-none select-none"
                     />
-                  ) : selectedFieldId === field.id ? (
+                  ) : isSelected ? (
                     <input
                       type="text"
+                      ref={(el) => {
+                        if (el) {
+                          if (document.activeElement !== el) {
+                            el.focus({ preventScroll: true });
+                          }
+                          const font = field.fontFamily || 'Inter';
+                          el.style.setProperty('font-family', `"${font}", cursive, sans-serif`, 'important');
+                        }
+                      }}
                       value={field.value || ''}
                       onChange={(e) => {
                         const val = e.target.value;
@@ -647,22 +689,36 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
                           prev.map((f) => (f.id === field.id ? { ...f, value: val } : f))
                         );
                       }}
-                      onMouseDown={(e) => e.stopPropagation()}
-                      style={{ fontFamily: field.fontFamily || 'Inter, sans-serif' }}
+                      onMouseDown={(e) => {
+                        handleMouseDown(field.id, e);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          setSelectedFieldId(null);
+                        }
+                      }}
+                      style={{
+                        fontFamily: field.fontFamily ? `"${field.fontFamily}", cursive, sans-serif` : 'Inter, sans-serif',
+                      }}
                       className="text-xs font-bold px-1.5 py-0.5 rounded bg-white/95 dark:bg-card/95 border border-primary text-foreground outline-none w-full text-center"
-                      autoFocus
                     />
                   ) : (
                     <span
                       className="text-xs font-semibold px-2 py-0.5 rounded pointer-events-none font-bold"
-                      style={{ color: 'var(--fg)', fontFamily: field.fontFamily || 'Inter, sans-serif' }}
+                      style={{
+                        color: 'var(--fg)',
+                        fontFamily: field.fontFamily ? `"${field.fontFamily}", cursive, sans-serif` : 'Inter, sans-serif',
+                      }}
                     >
                       {field.value}
                     </span>
                   )
                 ) : (
                   <div
-                    onClick={(e) => { e.stopPropagation(); onOpenSignatureModal(field.id); }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onOpenSignatureModal(field.id);
+                    }}
                     className="flex items-center gap-1 text-xs font-bold cursor-pointer"
                     style={{ color: 'var(--moss)' }}
                   >
@@ -671,12 +727,85 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
                   </div>
                 )}
 
+                {/* Floating Context Toolbar when field is selected */}
+                {isSelected && (
+                  <div
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onClick={(e) => e.stopPropagation()}
+                    className={`absolute z-40 flex items-center gap-1.5 p-1 rounded-full animate-fadeIn whitespace-nowrap overflow-visible ${
+                      field.y < 12 ? 'top-[calc(100%+8px)]' : 'bottom-[calc(100%+8px)]'
+                    } ${field.x > 35 ? 'right-0' : 'left-0'}`}
+                    style={{
+                      background: 'rgba(254, 254, 250, 0.96)',
+                      backdropFilter: 'blur(16px)',
+                      border: '1px solid var(--border)',
+                      boxShadow: '0 8px 24px -4px rgba(44, 44, 36, 0.20), 0 2px 6px rgba(44, 44, 36, 0.08)',
+                    }}
+                  >
+                    {/* Font selector for text/date fields */}
+                    {(field.fieldType === 'text' || field.fieldType === 'date' || field.fieldType === 'name') && (
+                      <div className="flex items-center gap-1 pl-1">
+                        <span className="text-[10px] font-bold" style={{ color: 'var(--fg-muted)' }}>Font:</span>
+                        <div className="w-28">
+                          <Dropdown
+                            value={field.fontFamily || 'Inter'}
+                            onChange={(val) => {
+                              const font = String(val);
+                              setFields((prev) =>
+                                prev.map((f) => (f.id === field.id ? { ...f, fontFamily: font } : f))
+                              );
+                            }}
+                            options={TEXT_FONT_OPTIONS}
+                            buttonClassName="!h-7 !py-0 px-2 text-[11px] bg-white/90"
+                            menuClassName="min-w-[170px]"
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Signer assignment selector */}
+                    <div className="flex items-center gap-1 pl-1">
+                      <Users style={{ height: 11, width: 11, color: 'var(--fg-muted)' }} />
+                      <div className="w-32 sm:w-36">
+                        <Dropdown
+                          value={String(field.signerOrder || 0)}
+                          onChange={(val) => {
+                            if (val === '__add__') {
+                              onSendClick();
+                              return;
+                            }
+                            const order = Number(val);
+                            const targetRec = recipients.find((r) => r.signingOrder === order);
+                            setFields((prev) =>
+                              prev.map((f) =>
+                                f.id === field.id
+                                  ? {
+                                      ...f,
+                                      signerOrder: order === 0 ? undefined : order,
+                                      signerName: targetRec?.name,
+                                      signerEmail: targetRec?.email,
+                                      signerId: targetRec?.id,
+                                    }
+                                  : f
+                              )
+                            );
+                          }}
+                          options={signerOptions}
+                          buttonClassName="!h-7 !py-0 px-2 text-[11px] bg-white/90"
+                          align={field.x > 35 ? 'right' : 'left'}
+                          menuClassName="min-w-[180px]"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {/* Delete handle */}
                 <button
                   onClick={(e) => removeField(field.id, e)}
                   onMouseDown={(e) => e.stopPropagation()}
                   className={`absolute -top-2.5 -right-2.5 h-6 w-6 rounded-full flex items-center justify-center transition-all duration-200 z-30 cursor-pointer ${
-                    selectedFieldId === field.id ? 'opacity-100 scale-100' : 'opacity-0 group-hover:opacity-100'
+                    isSelected ? 'opacity-100 scale-100' : 'opacity-0 group-hover:opacity-100'
                   }`}
                   style={{
                     background: '#A85448',
@@ -690,7 +819,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
                 </button>
 
                 {/* Corner Resize handle */}
-                {selectedFieldId === field.id && (
+                {isSelected && (
                   <div
                     onMouseDown={(e) => handleResizeMouseDown(field.id, e)}
                     className="absolute -bottom-2 -right-2 w-4 h-4 rounded-full flex items-center justify-center cursor-se-resize z-30 transition-transform hover:scale-125"
@@ -710,5 +839,6 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
         </div>
       </div>
     </div>
+  </div>
   );
 };

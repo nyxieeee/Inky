@@ -195,8 +195,8 @@ export function App() {
       const img = new Image();
       img.onload = () => {
         const aspect = img.naturalWidth / (img.naturalHeight || 1);
-        const targetHeight = 7.5;
-        const targetWidth = Math.min(50, Math.max(12, targetHeight * 1.4 * aspect));
+        const targetHeight = aspect < 2.0 ? 10.5 : 7.5;
+        const targetWidth = Math.min(50, Math.max(14, targetHeight * 1.4 * aspect));
         setFields((prev) =>
           prev.map((f) =>
             f.id === targetFieldId
