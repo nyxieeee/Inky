@@ -219,6 +219,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       await supabase.auth.signOut();
     }
     set({ user: null, session: null });
-    useToastStore.getState().showToast('Signed out. Local offline mode active.', 'info');
+    useToastStore.getState().showToast('Signed out successfully.', 'info');
   },
 }));

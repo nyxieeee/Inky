@@ -7,6 +7,12 @@ interface AuthModalProps {
   onClose: () => void;
 }
 
+const isLocalhost =
+  typeof window !== 'undefined' &&
+  (window.location.hostname === 'localhost' ||
+   window.location.hostname === '127.0.0.1' ||
+   window.location.hostname === '::1');
+
 export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
   const {
     user,
@@ -153,18 +159,20 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
               </p>
 
               <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    signInWithDemoGoogle();
-                    onClose();
-                  }}
-                  className="btn-outline flex-1 py-2.5 text-xs text-[var(--moss)] border-[var(--moss)]"
-                >
-                  Try Demo Sign-In
-                </button>
+                {isLocalhost && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      signInWithDemoGoogle();
+                      onClose();
+                    }}
+                    className="btn-outline flex-1 py-2.5 text-xs text-[var(--moss)] border-[var(--moss)]"
+                  >
+                    Try Demo Sign-In
+                  </button>
+                )}
                 <button onClick={onClose} className="btn-primary flex-1 py-2.5 text-xs">
-                  Local Mode
+                  {isLocalhost ? 'Local Mode' : 'Close'}
                 </button>
               </div>
             </div>

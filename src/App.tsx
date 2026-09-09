@@ -30,6 +30,12 @@ import {
   Inbox, Leaf, Copy, Check, Pencil, X,
 } from 'lucide-react';
 
+const isLocalhost =
+  typeof window !== 'undefined' &&
+  (window.location.hostname === 'localhost' ||
+   window.location.hostname === '127.0.0.1' ||
+   window.location.hostname === '::1');
+
 export function App() {
   const {
     documents,
@@ -189,14 +195,18 @@ export function App() {
     );
   }
 
-  // Show login page by default when running website unauthenticated (unless guest mode chosen)
-  if ((!user && !guestMode) || currentPath === '/login') {
+  // Show login page by default when running website unauthenticated
+  // Note: Guest mode is ONLY permitted on localhost for local development with Antigravity
+  const canUseGuest = isLocalhost && guestMode;
+  if ((!user && !canUseGuest) || currentPath === '/login') {
     return (
       <>
         <LoginPage
           onNavigateHome={() => {
-            setGuestMode(true);
-            navigateTo('/');
+            if (isLocalhost) {
+              setGuestMode(true);
+              navigateTo('/');
+            }
           }}
         />
         <Toast />

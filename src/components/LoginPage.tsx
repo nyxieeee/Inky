@@ -30,6 +30,12 @@ const GoogleIcon: React.FC<{ className?: string }> = ({ className = 'w-5 h-5' })
   </svg>
 );
 
+const isLocalhost =
+  typeof window !== 'undefined' &&
+  (window.location.hostname === 'localhost' ||
+   window.location.hostname === '127.0.0.1' ||
+   window.location.hostname === '::1');
+
 export const LoginPage: React.FC<LoginPageProps> = ({ onNavigateHome }) => {
   const {
     user,
@@ -60,67 +66,79 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigateHome }) => {
     if (!email.trim()) return;
 
     if (mode === 'password') {
-      const res = await signInWithPassword(email.trim(), password);
-      if (res.success) onNavigateHome();
-    } else if (mode === 'signup') {
-      const res = await signUpWithPassword(email.trim(), password);
-      if (res.success) onNavigateHome();
+      await signInWithPassword(email, password);
+    } else {
+      await signUpWithPassword(email, password);
     }
   };
 
   return (
     <div
-      className="min-h-screen w-full flex flex-col justify-between p-4 sm:p-6 md:p-8 relative overflow-x-hidden"
+      className="min-h-screen w-full flex flex-col justify-between p-4 sm:p-6 md:p-8 relative overflow-hidden"
       style={{
         background: 'radial-gradient(ellipse at top, #faf8f5 0%, #ede8e1 100%)',
         color: 'var(--fg)',
       }}
     >
-      {/* Background organic blur spheres */}
-      <div
-        className="absolute top-[-80px] left-[-80px] w-96 h-96 rounded-full pointer-events-none opacity-40 blur-3xl"
-        style={{ background: 'var(--moss-dim)' }}
-      />
-      <div
-        className="absolute bottom-[-100px] right-[-100px] w-[28rem] h-[28rem] rounded-full pointer-events-none opacity-30 blur-3xl"
-        style={{ background: 'rgba(193, 140, 93, 0.15)' }}
-      />
+      {/* Background organic blur spheres clipped inside viewport */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden>
+        <div
+          className="absolute top-[-80px] left-[-80px] w-96 h-96 rounded-full opacity-40 blur-3xl"
+          style={{ background: 'var(--moss-dim)' }}
+        />
+        <div
+          className="absolute bottom-[-100px] right-[-100px] w-[28rem] h-[28rem] rounded-full opacity-30 blur-3xl"
+          style={{ background: 'rgba(193, 140, 93, 0.15)' }}
+        />
+      </div>
 
       {/* Top Bar Navigation */}
-      <header className="w-full max-w-5xl mx-auto flex items-center justify-between z-10">
-        <button
-          type="button"
-          onClick={onNavigateHome}
-          className="flex items-center gap-2 px-4 py-2 rounded-full transition-all duration-200 hover:scale-105 cursor-pointer"
-          style={{
-            background: 'rgba(255, 255, 255, 0.70)',
-            border: '1px solid var(--border-light)',
-            color: 'var(--fg)',
-            boxShadow: 'var(--shadow-soft)',
-          }}
-        >
-          <ArrowLeft style={{ height: 16, width: 16, color: 'var(--moss)' }} />
-          <span className="text-xs font-bold">Continue as Guest</span>
-        </button>
-
-        <div className="flex items-center gap-2">
+      <header className="w-full max-w-5xl mx-auto flex items-center justify-between z-10 px-2 sm:px-4">
+        {/* Brand Logo on the Left */}
+        <div className="flex items-center gap-2.5 select-none">
           <img
             src="/inky-mark.png"
             alt="Inky Logo"
-            className="h-8 w-auto object-contain drop-shadow-sm"
+            className="h-8.5 w-auto object-contain drop-shadow-sm"
+            style={{ height: '34px' }}
           />
           <img
             src="/inky-wordmark.png"
             alt="Inky"
             className="h-5 w-auto object-contain"
+            style={{ height: '22px' }}
           />
         </div>
+
+        {/* Right side: Only show Guest button on localhost, else Cloud Security Badge */}
+        {isLocalhost ? (
+          <button
+            type="button"
+            onClick={onNavigateHome}
+            className="flex items-center gap-2 px-4 py-2 rounded-full transition-all duration-200 hover:scale-105 cursor-pointer"
+            style={{
+              background: 'rgba(255, 255, 255, 0.80)',
+              border: '1px solid var(--border-light)',
+              color: 'var(--fg)',
+              boxShadow: 'var(--shadow-soft)',
+            }}
+          >
+            <span className="text-[10px] font-extrabold uppercase tracking-wider text-[var(--terracotta)]">Dev Mode</span>
+            <span className="text-xs font-bold">Continue as Guest</span>
+            <ArrowRight style={{ height: 14, width: 14, color: 'var(--moss)' }} />
+          </button>
+        ) : (
+          <div className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold text-[var(--fg-muted)] bg-white/60 border border-[var(--border-light)] shadow-xs">
+            <Shield className="w-3.5 h-3.5 text-[var(--moss)]" />
+            <span>Secure Cloud E-Sign</span>
+          </div>
+        )}
       </header>
 
       {/* Main Content Area */}
-      <main className="w-full max-w-md mx-auto my-8 z-10 animate-slideUp">
+      <main className="w-full max-w-md mx-auto my-auto py-6 z-10 animate-slideUp flex flex-col items-center justify-center">
         <div
-          className="card-organic p-7 sm:p-9"
+          className="card-organic w-full p-7 sm:p-9"
           style={{
             borderRadius: '2.5rem',
             background: 'rgba(255, 255, 255, 0.82)',
@@ -265,17 +283,19 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigateHome }) => {
                       {showConfigHelp ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
                     </button>
 
-                    <button
-                      type="button"
-                      onClick={signInWithDemoGoogle}
-                      className="px-3 py-1 rounded-full text-[11px] font-bold transition-all hover:scale-105 cursor-pointer"
-                      style={{
-                        background: 'var(--moss)',
-                        color: '#ffffff',
-                      }}
-                    >
-                      Try Demo Google Sign-In
-                    </button>
+                    {isLocalhost && (
+                      <button
+                        type="button"
+                        onClick={signInWithDemoGoogle}
+                        className="px-3 py-1 rounded-full text-[11px] font-bold transition-all hover:scale-105 cursor-pointer"
+                        style={{
+                          background: 'var(--moss)',
+                          color: '#ffffff',
+                        }}
+                      >
+                        Try Demo Google Sign-In
+                      </button>
+                    )}
                   </div>
 
                   {showConfigHelp && (
@@ -402,15 +422,17 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigateHome }) => {
                 By continuing, you agree to Inky's local-first privacy policy. Signatures and PDFs stay securely stored on your devices.
               </p>
 
-              <div className="text-center pt-1 border-t border-[var(--border-light)]">
-                <button
-                  type="button"
-                  onClick={onNavigateHome}
-                  className="text-xs font-bold text-[var(--fg-muted)] hover:text-[var(--moss)] hover:underline transition-colors py-1 cursor-pointer"
-                >
-                  Skip for now — Continue as Guest (Offline Mode) →
-                </button>
-              </div>
+              {isLocalhost && (
+                <div className="text-center pt-1 border-t border-[var(--border-light)]">
+                  <button
+                    type="button"
+                    onClick={onNavigateHome}
+                    className="text-xs font-bold text-[var(--fg-muted)] hover:text-[var(--moss)] hover:underline transition-colors py-1 cursor-pointer"
+                  >
+                    Skip for now — Continue as Guest (Offline Mode) →
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>

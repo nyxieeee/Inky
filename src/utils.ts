@@ -159,7 +159,8 @@ export async function combineSignatureAndName(
   sigDataUrl: string,
   name: string,
   textColor: string,
-  fontFamily = 'Inter, system-ui, -apple-system, sans-serif'
+  fontFamily = 'Inter, system-ui, -apple-system, sans-serif',
+  nameSpacing = 8
 ): Promise<string> {
   return new Promise((resolve) => {
     const img = new Image();
@@ -187,9 +188,12 @@ export async function combineSignatureAndName(
       const paddingX = 24 * scale;
       const contentWidth = Math.max(sigW, textWidth);
       const totalWidth = contentWidth + paddingX * 2;
-      const gap = 10 * scale;
+      const gap = Math.round(nameSpacing * scale);
       const textHeight = fontSize * 1.25;
-      const totalHeight = sigH + gap + textHeight + (10 * scale);
+      const totalHeight = Math.max(
+        sigH + (12 * scale),
+        (4 * scale) + sigH + gap + textHeight + (10 * scale)
+      );
 
       canvas.width = Math.round(totalWidth);
       canvas.height = Math.round(totalHeight);
@@ -205,7 +209,7 @@ export async function combineSignatureAndName(
       ctx.drawImage(img, sigX, 4 * scale, sigW, sigH);
 
       // 2. Draw printed name directly below signature (no line)
-      const textY = (4 * scale) + sigH + gap;
+      const textY = Math.max(4 * scale, (4 * scale) + sigH + gap);
       ctx.fillText(cleanName, totalWidth / 2, textY);
 
       resolve(trimCanvas(canvas, 6));

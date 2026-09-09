@@ -1,6 +1,6 @@
 import React, { useRef, useState, useEffect } from 'react';
 import SignaturePad from 'signature_pad';
-import { X, PenTool, Type, Upload, Check, RotateCcw, ChevronDown } from 'lucide-react';
+import { X, PenTool, Type, Upload, Check, RotateCcw, ChevronDown, Minus, Plus } from 'lucide-react';
 import { saveSignature, getSavedSignatures } from '../../lib/storage';
 import { SavedSignature } from '../../types';
 import { trimCanvas, processUploadedSignature, combineSignatureAndName } from '../../utils';
@@ -63,6 +63,10 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
   const [sigLabel, setSigLabel]                     = useState('');
   const [includePrintedName, setIncludePrintedName] = useState(false);
   const [printedName, setPrintedName]               = useState('');
+  const [nameSpacing, setNameSpacing]               = useState<number>(8);
+  const [drawnPreview, setDrawnPreview]             = useState<string | null>(null);
+  const [sigBottomY, setSigBottomY]                 = useState<number | null>(null);
+  const [combinedPreviewUrl, setCombinedPreviewUrl] = useState<string | null>(null);
   const [isDefault, setIsDefault]                   = useState(true);
   const [savedSigs, setSavedSigs]                   = useState<SavedSignature[]>([]);
 
@@ -70,12 +74,43 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
   const sigPadRef = useRef<any | null>(null);
   const drawnPointsRef = useRef<any[] | null>(null);
 
+  const getCanvasBottomY = (canvas: HTMLCanvasElement | null): number | null => {
+    if (!canvas) return null;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+    const { width, height } = canvas;
+    if (!width || !height) return null;
+    try {
+      const imgData = ctx.getImageData(0, 0, width, height);
+      const { data } = imgData;
+      for (let y = height - 1; y >= 0; y--) {
+        const rowOffset = y * width * 4;
+        for (let x = 0; x < width; x++) {
+          if (data[rowOffset + x * 4 + 3] > 10) {
+            const cssHeight = canvas.clientHeight || (height / (window.devicePixelRatio || 1));
+            const ratio = height / cssHeight;
+            return y / ratio;
+          }
+        }
+      }
+    } catch {
+      return null;
+    }
+    return null;
+  };
+
   useEffect(() => {
     if (isOpen) {
       setSavedSigs(getSavedSignatures());
       setActiveTab('draw');
+      setDrawnPreview(null);
+      setSigBottomY(null);
+      setCombinedPreviewUrl(null);
     } else {
       drawnPointsRef.current = null;
+      setDrawnPreview(null);
+      setSigBottomY(null);
+      setCombinedPreviewUrl(null);
     }
   }, [isOpen]);
 
@@ -128,6 +163,15 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
       });
       pad.addEventListener('endStroke', () => {
         drawnPointsRef.current = pad.toData();
+        try {
+          if (canvasRef.current && !pad.isEmpty()) {
+            setDrawnPreview(trimCanvas(canvasRef.current, 4));
+            const bY = getCanvasBottomY(canvasRef.current);
+            setSigBottomY(bY);
+          }
+        } catch {
+          // ignore
+        }
       });
       sigPadRef.current = pad;
     } else {
@@ -140,6 +184,15 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
     // Restore any existing strokes onto the newly sized canvas
     if (savedData && savedData.length > 0) {
       sigPadRef.current.fromData(savedData);
+      try {
+        if (canvasRef.current && !sigPadRef.current.isEmpty()) {
+          setDrawnPreview(trimCanvas(canvasRef.current, 4));
+          const bY = getCanvasBottomY(canvasRef.current);
+          setSigBottomY(bY);
+        }
+      } catch {
+        // ignore
+      }
     }
   };
 
@@ -155,6 +208,15 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
         }));
         drawnPointsRef.current = updatedData;
         sigPadRef.current.fromData(updatedData);
+        try {
+          if (canvasRef.current && !sigPadRef.current.isEmpty()) {
+            setDrawnPreview(trimCanvas(canvasRef.current, 4));
+            const bY = getCanvasBottomY(canvasRef.current);
+            setSigBottomY(bY);
+          }
+        } catch {
+          // ignore
+        }
       }
     }
   };
@@ -174,6 +236,15 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
         }));
         drawnPointsRef.current = updatedData;
         sigPadRef.current.fromData(updatedData);
+        try {
+          if (canvasRef.current && !sigPadRef.current.isEmpty()) {
+            setDrawnPreview(trimCanvas(canvasRef.current, 4));
+            const bY = getCanvasBottomY(canvasRef.current);
+            setSigBottomY(bY);
+          }
+        } catch {
+          // ignore
+        }
       }
     }
   };
@@ -181,6 +252,9 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
   const handleClear = () => {
     sigPadRef.current?.clear();
     drawnPointsRef.current = null;
+    setDrawnPreview(null);
+    setSigBottomY(null);
+    setCombinedPreviewUrl(null);
   };
 
   const handleTabChange = (newTab: 'draw' | 'type' | 'upload' | 'saved') => {
@@ -276,8 +350,6 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
     };
   }, [isOpen]);
 
-  if (!isOpen) return null;
-
   const generateTypedDataUrl = (text: string): string => {
     const canvas = document.createElement('canvas');
     canvas.width = 1600;
@@ -292,6 +364,50 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
     ctx.fillText(text, canvas.width / 2, canvas.height / 2);
     return trimCanvas(canvas, 12);
   };
+
+  useEffect(() => {
+    if (!isOpen || !includePrintedName || !printedName.trim()) {
+      setCombinedPreviewUrl(null);
+      return;
+    }
+    let isMounted = true;
+    const updateCombined = async () => {
+      let baseSig = '';
+      if (activeTab === 'draw') {
+        if (canvasRef.current && sigPadRef.current && !sigPadRef.current.isEmpty()) {
+          baseSig = trimCanvas(canvasRef.current, 8);
+        }
+      } else if (activeTab === 'type') {
+        if (typedText.trim()) {
+          baseSig = generateTypedDataUrl(typedText);
+        }
+      }
+      if (baseSig) {
+        try {
+          const combined = await combineSignatureAndName(
+            baseSig,
+            printedName.trim(),
+            penColor,
+            undefined,
+            nameSpacing
+          );
+          if (isMounted) {
+            setCombinedPreviewUrl(combined);
+          }
+        } catch {
+          if (isMounted) setCombinedPreviewUrl(null);
+        }
+      } else {
+        if (isMounted) setCombinedPreviewUrl(null);
+      }
+    };
+    updateCombined();
+    return () => {
+      isMounted = false;
+    };
+  }, [isOpen, includePrintedName, printedName, nameSpacing, activeTab, penColor, typedText, selectedFont, drawnPreview]);
+
+  if (!isOpen) return null;
 
   const handleSaveAndSelect = async () => {
     let dataUrl = ''; let label = 'Signature';
@@ -313,7 +429,7 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
     }
     if (dataUrl) {
       if (includePrintedName && effectiveName) {
-        dataUrl = await combineSignatureAndName(dataUrl, effectiveName, penColor);
+        dataUrl = await combineSignatureAndName(dataUrl, effectiveName, penColor, undefined, nameSpacing);
       }
       saveSignature({ type: activeTab as any, dataUrl, label, isDefault });
       onSelectSignature(dataUrl, label);
@@ -331,7 +447,7 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
         let cleanResult = await processUploadedSignature(rawResult);
         const effectiveName = printedName.trim();
         if (includePrintedName && effectiveName) {
-          cleanResult = await combineSignatureAndName(cleanResult, effectiveName, penColor);
+          cleanResult = await combineSignatureAndName(cleanResult, effectiveName, penColor, undefined, nameSpacing);
         }
         const label = sigLabel.trim() || (includePrintedName && effectiveName ? effectiveName : 'Uploaded Signature');
         saveSignature({ type: 'upload', dataUrl: cleanResult, label, isDefault });
@@ -451,10 +567,18 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
                 }}
               />
               {includePrintedName && printedName.trim() && (
-                <div className="absolute bottom-2 inset-x-4 pointer-events-none text-center select-none animate-fadeIn">
+                <div
+                  className="absolute inset-x-0 pointer-events-none text-center select-none animate-fadeIn transition-all duration-75"
+                  style={{
+                    top: sigBottomY !== null
+                      ? `${Math.min(154, Math.max(8, sigBottomY + nameSpacing))}px`
+                      : undefined,
+                    bottom: sigBottomY === null ? '16px' : undefined,
+                  }}
+                >
                   <span
                     className="text-xs sm:text-sm font-extrabold tracking-wider uppercase truncate block px-2"
-                    style={{ color: penColor }}
+                    style={{ color: penColor, fontFamily: 'Inter, system-ui, sans-serif' }}
                   >
                     {printedName.trim()}
                   </span>
@@ -591,12 +715,12 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
                 Preview — {selectedFont}
               </span>
               <div
-                className="w-full p-5 rounded-[1.5rem] flex items-center justify-center overflow-hidden"
+                className="w-full p-5 rounded-[1.5rem] flex flex-col items-center justify-center overflow-hidden transition-all duration-150"
                 style={{
                   background: 'rgba(255,255,255,0.60)',
                   border: '2px solid rgba(93,112,82,0.20)',
                   boxShadow: 'inset 0 2px 10px rgba(44,44,36,0.05)',
-                  minHeight: 100,
+                  minHeight: 110,
                 }}
               >
                 <span
@@ -605,6 +729,18 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
                 >
                   {typedText || 'Your Name'}
                 </span>
+                {includePrintedName && printedName.trim() && (
+                  <span
+                    className="text-center select-none font-bold uppercase tracking-wider text-xs sm:text-sm animate-fadeIn transition-all duration-100"
+                    style={{
+                      color: penColor,
+                      marginTop: `${nameSpacing}px`,
+                      fontFamily: 'Inter, system-ui, sans-serif',
+                    }}
+                  >
+                    {printedName.trim()}
+                  </span>
+                )}
               </div>
             </div>
 
@@ -698,7 +834,7 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
 
           {/* Signature over Printed Name option */}
           {activeTab !== 'saved' && (
-            <div className="p-3.5 rounded-2xl bg-[var(--bg-stone)] border border-[var(--border-light)] space-y-2.5">
+            <div className="p-3.5 rounded-2xl bg-[var(--bg-stone)] border border-[var(--border-light)] space-y-3">
               <label className="flex items-center justify-between cursor-pointer select-none">
                 <div className="flex items-center gap-2.5">
                   <div className="h-7 w-7 rounded-xl flex items-center justify-center bg-[var(--moss-dim)] text-[var(--moss)]">
@@ -716,26 +852,190 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
                 <input
                   type="checkbox"
                   checked={includePrintedName}
-                  onChange={(e) => setIncludePrintedName(e.target.checked)}
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    setIncludePrintedName(checked);
+                    if (checked && canvasRef.current) {
+                      const bY = getCanvasBottomY(canvasRef.current);
+                      if (bY !== null) setSigBottomY(bY);
+                    }
+                  }}
                   className="rounded accent-[var(--moss)] h-4 w-4 cursor-pointer"
                 />
               </label>
 
               {includePrintedName && (
-                <div className="space-y-1.5 pt-2 border-t border-[var(--border-light)] animate-fadeIn">
-                  <label className="block text-[11px] font-bold" style={{ color: 'var(--fg-muted)' }}>
-                    Printed Full Name
-                  </label>
-                  <input
-                    type="text"
-                    value={printedName}
-                    onChange={(e) => setPrintedName(e.target.value)}
-                    className="input-organic h-9 text-xs font-bold uppercase tracking-wider"
-                    placeholder="e.g. JUAN DELA CRUZ"
-                    autoFocus
-                  />
+                <div className="space-y-3 pt-2.5 border-t border-[var(--border-light)] animate-fadeIn">
+                  <div>
+                    <label className="block text-[11px] font-bold mb-1" style={{ color: 'var(--fg-muted)' }}>
+                      Printed Full Name
+                    </label>
+                    <input
+                      type="text"
+                      value={printedName}
+                      onChange={(e) => setPrintedName(e.target.value)}
+                      className="input-organic h-9 text-xs font-bold uppercase tracking-wider"
+                      placeholder="e.g. JUAN DELA CRUZ"
+                      autoFocus
+                    />
+                  </div>
+
+                  {/* Name Distance / Spacing Controls */}
+                  <div className="space-y-2 p-2.5 rounded-xl bg-white/60 border border-[var(--border-light)]">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[11px] font-bold" style={{ color: 'var(--fg)' }}>
+                          Agwat / Spacing ng Pangalan
+                        </span>
+                        <span className="text-[10px] text-[var(--fg-muted)]">
+                          (Papalapit o Papalayo)
+                        </span>
+                      </div>
+                      <span
+                        className="text-[11px] font-mono font-bold px-1.5 py-0.5 rounded-md"
+                        style={{
+                          background: 'rgba(93,112,82,0.12)',
+                          color: 'var(--moss)',
+                        }}
+                      >
+                        {nameSpacing > 0 ? `+${nameSpacing}px` : `${nameSpacing}px`}
+                      </span>
+                    </div>
+
+                    {/* Step buttons and slider */}
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setNameSpacing((prev) => Math.max(-15, prev - 2))}
+                        title="Papalapit sa pirma (Closer)"
+                        className="h-7 w-7 rounded-lg flex items-center justify-center font-bold text-sm transition-all hover:bg-black/5 active:scale-95 select-none"
+                        style={{ border: '1px solid var(--border-light)', color: 'var(--fg)' }}
+                      >
+                        -
+                      </button>
+                      <input
+                        type="range"
+                        min={-15}
+                        max={35}
+                        step={1}
+                        value={nameSpacing}
+                        onChange={(e) => setNameSpacing(Number(e.target.value))}
+                        className="flex-1 h-1.5 rounded-lg appearance-none cursor-pointer accent-[var(--moss)] bg-[var(--border-light)]"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setNameSpacing((prev) => Math.min(35, prev + 2))}
+                        title="Papalayo sa pirma (Farther)"
+                        className="h-7 w-7 rounded-lg flex items-center justify-center font-bold text-sm transition-all hover:bg-black/5 active:scale-95 select-none"
+                        style={{ border: '1px solid var(--border-light)', color: 'var(--fg)' }}
+                      >
+                        +
+                      </button>
+                    </div>
+
+                    {/* Preset buttons */}
+                    <div className="flex items-center justify-between text-[10px] pt-0.5">
+                      <span className="text-[10px] text-[var(--fg-muted)] font-medium">
+                        ◀ Papalapit (Dikit)
+                      </span>
+                      <div className="flex gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setNameSpacing(-6)}
+                          className={`px-2 py-0.5 rounded-md text-[10px] font-bold transition-all ${
+                            nameSpacing <= -3
+                              ? 'bg-[var(--moss)] text-white shadow-sm'
+                              : 'bg-black/5 hover:bg-black/10 text-[var(--fg-muted)]'
+                          }`}
+                        >
+                          Dikit (-6px)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setNameSpacing(8)}
+                          className={`px-2 py-0.5 rounded-md text-[10px] font-bold transition-all ${
+                            nameSpacing >= 4 && nameSpacing <= 14
+                              ? 'bg-[var(--moss)] text-white shadow-sm'
+                              : 'bg-black/5 hover:bg-black/10 text-[var(--fg-muted)]'
+                          }`}
+                        >
+                          Sakto (8px)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setNameSpacing(22)}
+                          className={`px-2 py-0.5 rounded-md text-[10px] font-bold transition-all ${
+                            nameSpacing >= 18
+                              ? 'bg-[var(--moss)] text-white shadow-sm'
+                              : 'bg-black/5 hover:bg-black/10 text-[var(--fg-muted)]'
+                          }`}
+                        >
+                          Malayo (22px)
+                        </button>
+                      </div>
+                      <span className="text-[10px] text-[var(--fg-muted)] font-medium">
+                        Papalayo (Awat) ▶
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Live Mini Preview */}
+                  {printedName.trim() && (
+                    <div
+                      className="p-3 rounded-xl border border-[rgba(93,112,82,0.25)] bg-white/80 flex flex-col items-center justify-center overflow-hidden transition-all duration-100 shadow-sm"
+                      style={{ minHeight: 75 }}
+                    >
+                      <div className="text-[9px] font-bold tracking-wider uppercase text-[var(--fg-muted)] opacity-60 mb-1 select-none">
+                        Live Preview (Pagsasamahin sa Iisang Box)
+                      </div>
+                      <div className="flex flex-col items-center justify-center w-full">
+                        {combinedPreviewUrl ? (
+                          <img
+                            src={combinedPreviewUrl}
+                            alt="Live Preview"
+                            className="max-h-20 max-w-[280px] object-contain select-none transition-all duration-75"
+                          />
+                        ) : activeTab === 'draw' && sigBottomY === null ? (
+                          <div className="text-center py-2">
+                            <span
+                              className="block italic text-xs mb-1"
+                              style={{ color: penColor, fontFamily: 'Caveat, cursive', fontSize: 20 }}
+                            >
+                              Pumirma sa drawing pad sa itaas
+                            </span>
+                            <span
+                              className="font-extrabold uppercase tracking-wider text-[11px] text-center select-none block"
+                              style={{ color: penColor, fontFamily: 'Inter, system-ui, sans-serif' }}
+                            >
+                              {printedName.trim()}
+                            </span>
+                          </div>
+                        ) : (
+                          <div className="flex flex-col items-center justify-center">
+                            <span
+                              className="italic text-xs mb-1"
+                              style={{ color: penColor, fontFamily: 'Caveat, cursive', fontSize: 22 }}
+                            >
+                              Sample Signature
+                            </span>
+                            <span
+                              className="font-extrabold uppercase tracking-wider text-[11px] text-center select-none"
+                              style={{
+                                color: penColor,
+                                marginTop: `${nameSpacing}px`,
+                                fontFamily: 'Inter, system-ui, sans-serif',
+                              }}
+                            >
+                              {printedName.trim()}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
                   <p className="text-[10px] text-[var(--fg-muted)] leading-tight">
-                    Pagsasamahin sa iisang box ang pirma at nakalimbag na pangalan para hindi na magkahiwalay.
+                    Pagsasamahin sa iisang box ang pirma at nakalimbag na pangalan para hindi na magkahiwalay kapag inilagay sa dokumento.
                   </p>
                 </div>
               )}
