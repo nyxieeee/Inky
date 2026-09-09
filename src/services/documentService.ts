@@ -116,8 +116,40 @@ export const documentService = {
   },
 
   async getDetails(id: string): Promise<Document & { fields: SignatureField[]; recipients: Recipient[] }> {
-    const docs = storage.getLocalDocuments();
-    const doc = docs.find((d) => d.id === id);
+    let docs = storage.getLocalDocuments();
+    let doc = docs.find((d) => d.id === id);
+
+    // If not found in local storage, fetch document record from Supabase
+    if (!doc && isSupabaseConfigured() && supabase) {
+      try {
+        const { data: cloudDoc, error } = await supabase
+          .from('documents')
+          .select('*')
+          .eq('id', id)
+          .maybeSingle();
+
+        if (cloudDoc && !error) {
+          doc = {
+            id: cloudDoc.id,
+            ownerId: cloudDoc.user_id,
+            title: cloudDoc.title,
+            status: cloudDoc.status,
+            source: cloudDoc.source,
+            filePath: cloudDoc.file_path,
+            originalFileName: cloudDoc.original_file_name || cloudDoc.title,
+            pageCount: cloudDoc.page_count || 1,
+            senderName: cloudDoc.sender_name,
+            senderEmail: cloudDoc.sender_email,
+            createdAt: cloudDoc.created_at,
+            updatedAt: cloudDoc.updated_at,
+          };
+          storage.saveLocalDocumentMeta(doc);
+        }
+      } catch (err) {
+        console.warn('Failed to fetch document metadata from Supabase:', err);
+      }
+    }
+
     if (!doc) throw new Error('Document not found');
 
     let blobUrl = blobUrlCache.get(id);
@@ -133,6 +165,15 @@ export const documentService = {
             const arrayBuffer = await fileBlob.arrayBuffer();
             bytes = new Uint8Array(arrayBuffer);
             await storage.storePdfBytes(id, bytes);
+          } else if (downloadError) {
+            // Try alternate bucket fallback
+            const altBucket = bucket === 'inbound' ? 'documents' : 'inbound';
+            const { data: altBlob } = await supabase.storage.from(altBucket).download(doc.filePath);
+            if (altBlob) {
+              const arrayBuffer = await altBlob.arrayBuffer();
+              bytes = new Uint8Array(arrayBuffer);
+              await storage.storePdfBytes(id, bytes);
+            }
           }
         } catch (e) {
           console.warn('Failed to download PDF from Supabase storage:', e);
@@ -148,8 +189,67 @@ export const documentService = {
       }
     }
 
-    const fields = storage.getLocalDocumentFields(id);
-    const recipients = storage.getLocalDocumentRecipients(id);
+    let fields = storage.getLocalDocumentFields(id);
+    let recipients = storage.getLocalDocumentRecipients(id);
+
+    // If local fields or recipients are empty, fetch from Supabase
+    if (isSupabaseConfigured() && supabase) {
+      if (fields.length === 0) {
+        try {
+          const { data: cloudFields } = await supabase
+            .from('signature_fields')
+            .select('*')
+            .eq('document_id', id);
+
+          if (cloudFields && cloudFields.length > 0) {
+            fields = cloudFields.map((f: any) => ({
+              id: f.id,
+              documentId: f.document_id,
+              pageNumber: f.page_number,
+              x: f.x,
+              y: f.y,
+              width: f.width,
+              height: f.height,
+              fieldType: f.field_type,
+              value: f.value,
+              fontFamily: f.font_family,
+              required: f.required ?? true,
+              signerId: f.signer_id,
+              signerEmail: f.signer_email,
+              signerOrder: f.signer_order,
+            }));
+            storage.saveLocalDocumentFields(id, fields);
+          }
+        } catch (e) {
+          console.warn('Failed to fetch signature fields from Supabase:', e);
+        }
+      }
+
+      if (recipients.length === 0) {
+        try {
+          const { data: cloudRecipients } = await supabase
+            .from('document_recipients')
+            .select('*')
+            .eq('document_id', id);
+
+          if (cloudRecipients && cloudRecipients.length > 0) {
+            recipients = cloudRecipients.map((r: any) => ({
+              id: r.id,
+              documentId: r.document_id,
+              email: r.email,
+              name: r.name,
+              signingOrder: r.signing_order,
+              status: r.status,
+              signedAt: r.signed_at,
+              token: r.token,
+            }));
+            storage.saveLocalDocumentRecipients(id, recipients);
+          }
+        } catch (e) {
+          console.warn('Failed to fetch recipients from Supabase:', e);
+        }
+      }
+    }
 
     return {
       ...doc,

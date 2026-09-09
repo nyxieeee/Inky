@@ -83,7 +83,8 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
         activeTab: 'editor',
       });
     } catch (err: any) {
-      useToastStore.getState().showToast('Failed to load document details', 'error');
+      console.error('Failed to select document:', err);
+      useToastStore.getState().showToast(err.message || 'Failed to load document details', 'error');
     } finally {
       set({ isLoading: false });
     }
