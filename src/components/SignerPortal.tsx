@@ -58,6 +58,15 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
   const [pendingAddCoords, setPendingAddCoords] = useState<{ x: number; y: number } | null>(null);
   const [draggingFieldId, setDraggingFieldId] = useState<string | null>(null);
   const [dragOffset, setDragOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [selectedFieldId, setSelectedFieldId] = useState<string | null>(null);
+  const [hoveredFieldId, setHoveredFieldId] = useState<string | null>(null);
+  const [isResizing, setIsResizing] = useState<boolean>(false);
+  const [resizeStart, setResizeStart] = useState<{
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  }>({ x: 0, y: 0, width: 0, height: 0 });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submittedResult, setSubmittedResult] = useState<{ allComplete: boolean; message: string } | null>(null);
 
@@ -237,6 +246,8 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
   // Dragging event handlers for mouse & touch
   const startDrag = (fieldId: string, clientX: number, clientY: number, e?: React.SyntheticEvent) => {
     e?.stopPropagation();
+    if (isResizing) return;
+    setSelectedFieldId(fieldId);
     if (!containerRef.current) return;
     const rect = containerRef.current.getBoundingClientRect();
     const currentFields = fieldsRef.current;
@@ -279,11 +290,63 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
     );
   };
 
+  // Corner Resizing event handlers
+  const startResize = (fieldId: string, clientX: number, clientY: number, e?: React.SyntheticEvent) => {
+    e?.stopPropagation();
+    const field = fieldsRef.current.find((f) => f.id === fieldId);
+    if (!field) return;
+
+    setIsResizing(true);
+    setSelectedFieldId(fieldId);
+    setResizeStart({
+      x: clientX,
+      y: clientY,
+      width: field.width,
+      height: field.height,
+    });
+  };
+
+  const onResizeMove = (clientX: number, clientY: number) => {
+    if (!isResizing || !selectedFieldId || !containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    const currentFields = fieldsRef.current;
+    const field = currentFields.find((f) => f.id === selectedFieldId);
+    if (!field) return;
+
+    const deltaX = ((clientX - resizeStart.x) / rect.width) * 100;
+    const deltaY = ((clientY - resizeStart.y) / rect.height) * 100;
+
+    const minWidth = 8;
+    const maxWidth = Math.min(85, 100 - field.x);
+    const newWidth = Math.max(minWidth, Math.min(maxWidth, resizeStart.width + deltaX));
+
+    const aspect = resizeStart.width / (resizeStart.height || 1);
+    const newHeight = field.fieldType === 'signature' || field.fieldType === 'initials'
+      ? Math.max(3, Math.min(50, newWidth / aspect))
+      : Math.max(3, Math.min(50, resizeStart.height + deltaY));
+
+    setFields((prev) =>
+      prev.map((f) =>
+        f.id === selectedFieldId
+          ? {
+              ...f,
+              width: Math.round(newWidth * 10) / 10,
+              height: Math.round(newHeight * 10) / 10,
+            }
+          : f
+      )
+    );
+  };
+
   useEffect(() => {
-    if (!draggingFieldId) return;
+    if (!draggingFieldId && !isResizing) return;
 
     const handlePointerMove = (e: MouseEvent) => {
-      onDragMove(e.clientX, e.clientY);
+      if (isResizing) {
+        onResizeMove(e.clientX, e.clientY);
+      } else if (draggingFieldId) {
+        onDragMove(e.clientX, e.clientY);
+      }
     };
     const handlePointerUp = () => {
       if (hasDraggedRef.current) {
@@ -294,10 +357,15 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
         }, 200);
       }
       setDraggingFieldId(null);
+      setIsResizing(false);
     };
     const handleTouchMove = (e: TouchEvent) => {
       if (e.touches.length === 1) {
-        onDragMove(e.touches[0].clientX, e.touches[0].clientY);
+        if (isResizing) {
+          onResizeMove(e.touches[0].clientX, e.touches[0].clientY);
+        } else if (draggingFieldId) {
+          onDragMove(e.touches[0].clientX, e.touches[0].clientY);
+        }
       }
     };
     const handleTouchEnd = () => {
@@ -309,6 +377,7 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
         }, 200);
       }
       setDraggingFieldId(null);
+      setIsResizing(false);
     };
 
     window.addEventListener('mousemove', handlePointerMove);
@@ -322,7 +391,7 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
       window.removeEventListener('touchmove', handleTouchMove);
       window.removeEventListener('touchend', handleTouchEnd);
     };
-  }, [draggingFieldId, dragOffset]);
+  }, [draggingFieldId, isResizing, resizeStart, selectedFieldId, dragOffset]);
 
   if (loading) {
     return (
@@ -486,6 +555,7 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
       setFields((prev) =>
         prev.map((f) => (f.id === activeSigFieldId ? { ...f, value: dataUrl } : f))
       );
+      setSelectedFieldId(activeSigFieldId);
       useToastStore.getState().showToast('Signature placed', 'success');
     } else {
       const newFieldId = `sig_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
@@ -514,7 +584,8 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
         ...prev,
         [newFieldId]: { value: dataUrl },
       }));
-      useToastStore.getState().showToast('Signature placed! Drag to position anywhere.', 'success');
+      setSelectedFieldId(newFieldId);
+      useToastStore.getState().showToast('Signature placed! Drag to position, drag corner to resize.', 'success');
     }
 
     setIsSigModalOpen(false);
@@ -567,10 +638,16 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
   };
 
   const handleCanvasClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    // If clicking on an existing field, button, or dragging, ignore
-    if (draggingFieldId || hasDraggedRef.current || dragJustEndedRef.current) return;
+    // If clicking on an existing field, button, or dragging/resizing, ignore
+    if (draggingFieldId || isResizing || hasDraggedRef.current || dragJustEndedRef.current) return;
     if ((e.target as HTMLElement).closest('.signature-field-box')) return;
     if ((e.target as HTMLElement).closest('button')) return;
+
+    // If a field is currently selected, clicking outside on the canvas deselects it to see signature clearly!
+    if (selectedFieldId) {
+      setSelectedFieldId(null);
+      return;
+    }
 
     if (!containerRef.current) return;
     const rect = containerRef.current.getBoundingClientRect();
@@ -768,7 +845,10 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
       </div>
 
       {/* ── PDF Canvas Viewport ──────────────────────────────── */}
-      <main className="flex-1 overflow-auto p-4 sm:p-8 flex flex-col items-center select-none bg-[var(--bg)]">
+      <main
+        onClick={() => setSelectedFieldId(null)}
+        className="flex-1 overflow-auto p-4 sm:p-8 flex flex-col items-center select-none bg-[var(--bg)]"
+      >
         {/* Subtle helper instruction */}
         <div className="text-center text-[11px] text-[var(--fg-muted)] pb-2.5 select-none flex items-center justify-center gap-1.5 font-medium">
           <PenTool className="h-3 w-3 text-[var(--moss)]" />
@@ -790,10 +870,47 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
             const signerColor = getSignerColor(field.signerOrder);
             const currentVal = fieldValues[field.id]?.value || field.value;
             const isDraggingThis = draggingFieldId === field.id;
+            const isSelected = selectedFieldId === field.id;
+            const isHovered = hoveredFieldId === field.id;
+
+            // Border & background styling based on selection state
+            let borderStyle = '2px solid transparent';
+            let backgroundStyle = 'transparent';
+            let boxShadowStyle = 'none';
+
+            if (mine) {
+              if (isDraggingThis || (isResizing && isSelected)) {
+                borderStyle = '2px solid var(--moss)';
+                backgroundStyle = 'rgba(255, 255, 255, 0.70)';
+                boxShadowStyle = '0 12px 28px rgba(0,0,0,0.18)';
+              } else if (isSelected) {
+                borderStyle = `2px solid ${signerColor}`;
+                backgroundStyle = currentVal ? 'rgba(255, 255, 255, 0.40)' : `${signerColor}18`;
+                boxShadowStyle = `0 0 0 3px ${signerColor}25, 0 4px 14px rgba(0,0,0,0.10)`;
+              } else if (!currentVal) {
+                borderStyle = `2px dashed ${signerColor}`;
+                backgroundStyle = `${signerColor}12`;
+                boxShadowStyle = `0 0 0 3px ${signerColor}15`;
+              } else if (isHovered) {
+                borderStyle = `1.5px dashed ${signerColor}90`;
+                backgroundStyle = 'rgba(255, 255, 255, 0.20)';
+              }
+            } else {
+              borderStyle = '1.5px dashed rgba(120,120,110,0.35)';
+              backgroundStyle = 'rgba(200,200,195,0.15)';
+            }
 
             return (
               <div
                 key={field.id}
+                onMouseEnter={() => setHoveredFieldId(field.id)}
+                onMouseLeave={() => setHoveredFieldId(null)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (mine) {
+                    setSelectedFieldId(field.id);
+                  }
+                }}
                 onMouseDown={mine ? (e) => startDrag(field.id, e.clientX, e.clientY, e) : undefined}
                 onTouchStart={
                   mine
@@ -810,46 +927,37 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
                   width: `${field.width}%`,
                   height: `${field.height}%`,
                   position: 'absolute',
-                  zIndex: isDraggingThis ? 35 : mine ? 25 : 10,
-                  border: mine
-                    ? isDraggingThis
-                      ? `2px solid var(--moss)`
-                      : `2px solid ${signerColor}`
-                    : '1.5px dashed rgba(120,120,110,0.35)',
+                  zIndex: isDraggingThis || (isResizing && isSelected) ? 35 : isSelected ? 30 : mine ? 25 : 10,
+                  border: borderStyle,
                   borderRadius: 10,
-                  background: mine
-                    ? currentVal
-                      ? 'rgba(255,255,255,0.92)'
-                      : `${signerColor}15`
-                    : 'rgba(200,200,195,0.15)',
+                  background: backgroundStyle,
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                   padding: 0,
-                  cursor: mine ? (isDraggingThis ? 'grabbing' : 'grab') : 'not-allowed',
-                  boxShadow: isDraggingThis
-                    ? '0 12px 28px rgba(0,0,0,0.22)'
-                    : mine && !currentVal
-                    ? `0 0 0 3px ${signerColor}25`
-                    : '0 2px 8px rgba(0,0,0,0.06)',
+                  cursor: mine ? (isDraggingThis ? 'grabbing' : isSelected ? 'move' : 'pointer') : 'not-allowed',
+                  boxShadow: boxShadowStyle,
                   touchAction: 'none',
-                  transition: isDraggingThis ? 'none' : 'box-shadow 0.2s ease, border-color 0.2s ease',
+                  transition: isDraggingThis || isResizing ? 'none' : 'box-shadow 0.15s ease, border-color 0.15s ease',
                 }}
                 className={`signature-field-box group ${mine && !currentVal ? 'animate-pulse' : ''}`}
               >
-                {/* Signer Identification Badge */}
-                <span
-                  className="absolute -top-2.5 left-2 px-1.5 py-0.5 rounded-full text-[9px] font-bold text-white shadow-xs z-30 pointer-events-none truncate max-w-[120px]"
-                  style={{ background: mine ? signerColor : '#7A7A70' }}
-                >
-                  {mine ? 'You' : `Signer ${field.signerOrder || ''}`}
-                </span>
+                {/* Signer Identification Badge (visible if selected or unfilled) */}
+                {(isSelected || !currentVal) && (
+                  <span
+                    className="absolute -top-2.5 left-2 px-1.5 py-0.5 rounded-full text-[9px] font-bold text-white shadow-xs z-30 pointer-events-none truncate max-w-[120px]"
+                    style={{ background: mine ? signerColor : '#7A7A70' }}
+                  >
+                    {mine ? 'You' : `Signer ${field.signerOrder || ''}`}
+                  </span>
+                )}
 
-                {/* Remove Field Button (for fields placed by this signer) */}
-                {mine && (
+                {/* Remove Field Button (visible when selected or hovered) */}
+                {mine && (isSelected || isHovered) && (
                   <button
                     onClick={(e) => handleRemoveField(field.id, e)}
-                    className="absolute -top-2.5 -right-2.5 h-5 w-5 rounded-full bg-rose-500 hover:bg-rose-600 text-white text-[10px] font-bold flex items-center justify-center shadow-md z-40 transition-transform hover:scale-110 opacity-80 hover:opacity-100"
+                    onMouseDown={(e) => e.stopPropagation()}
+                    className="absolute -top-2.5 -right-2.5 h-5 w-5 rounded-full bg-rose-500 hover:bg-rose-600 text-white text-[10px] font-bold flex items-center justify-center shadow-md z-40 transition-transform hover:scale-110"
                     title="Remove field"
                     aria-label="Remove field"
                   >
@@ -868,11 +976,33 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
                   </div>
                 )}
 
-                {/* Drag to Reposition Indicator */}
-                {mine && currentVal && (
-                  <div className="absolute -bottom-2 right-2 px-1.5 py-0.5 rounded-md bg-black/60 text-white text-[8px] font-bold opacity-70 group-hover:opacity-100 flex items-center gap-0.5 pointer-events-none transition-opacity">
+                {/* Drag to Reposition Indicator (visible when selected) */}
+                {mine && currentVal && isSelected && (
+                  <div className="absolute -bottom-2.5 left-2 px-1.5 py-0.5 rounded-md bg-black/70 text-white text-[8px] font-bold flex items-center gap-1 pointer-events-none shadow-sm">
                     <Move className="h-2 w-2" />
-                    <span>Drag</span>
+                    <span>Drag to move · Corner to resize</span>
+                  </div>
+                )}
+
+                {/* Corner Resize Handle (visible when selected) */}
+                {mine && isSelected && (
+                  <div
+                    onMouseDown={(e) => startResize(field.id, e.clientX, e.clientY, e)}
+                    onTouchStart={(e) => {
+                      if (e.touches.length === 1) {
+                        startResize(field.id, e.touches[0].clientX, e.touches[0].clientY, e);
+                      }
+                    }}
+                    className="absolute -bottom-2.5 -right-2.5 w-5 h-5 rounded-full flex items-center justify-center cursor-se-resize z-40 transition-transform hover:scale-125 shadow-md"
+                    style={{
+                      background: 'var(--moss)',
+                      border: '2px solid #ffffff',
+                      boxShadow: '0 2px 8px rgba(0,0,0,0.35)',
+                    }}
+                    title="Drag to resize signature"
+                    aria-label="Resize signature"
+                  >
+                    <div className="w-1.5 h-1.5 rounded-full bg-white" />
                   </div>
                 )}
 
