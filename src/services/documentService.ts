@@ -51,12 +51,22 @@ export const documentService = {
           }));
 
           const mergedMap = new Map<string, Document>();
-          // Only include local docs that match current user
-          docs.filter((d) => !d.ownerId || d.ownerId === currentUserId).forEach((d) => mergedMap.set(d.id, d));
+          const cloudDocIds = new Set(cloudDocs.map((cd) => cd.id));
+
+          // Only keep local docs that are purely offline drafts, or match cloudDocs
+          docs.filter((d) => !d.ownerId || d.ownerId === currentUserId).forEach((d) => {
+            const isCloudDoc = d.filePath?.startsWith('http') || (d.filePath && d.filePath.includes('/'));
+            if (!isCloudDoc || cloudDocIds.has(d.id)) {
+              mergedMap.set(d.id, d);
+            }
+          });
           cloudDocs.forEach((d) => mergedMap.set(d.id, { ...mergedMap.get(d.id), ...d }));
           docs = Array.from(mergedMap.values()).sort(
             (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
           );
+
+          // Synchronize pruned list to localStorage so deleted cloud docs don't linger locally
+          storage.saveAllLocalDocuments(docs, currentUserId);
         }
       } catch (e) {
         console.warn('Falling back to local documents:', e);
@@ -419,10 +429,48 @@ export const documentService = {
       URL.revokeObjectURL(existingBlob);
       blobUrlCache.delete(id);
     }
-    await storage.deleteLocalDocumentRecord(id);
 
+    let currentUserId = 'guest';
     if (isSupabaseConfigured() && supabase) {
-      supabase.from('documents').delete().eq('id', id).then();
+      try {
+        const { data: userData } = await supabase.auth.getUser();
+        if (userData?.user?.id) currentUserId = userData.user.id;
+      } catch (e) {
+        console.warn('Could not read user in delete:', e);
+      }
+    }
+
+    // 1. Purge from local storage & IndexedDB across all storage keys
+    await storage.deleteLocalDocumentRecord(id, currentUserId);
+
+    // 2. Purge from Supabase
+    if (isSupabaseConfigured() && supabase) {
+      try {
+        // Fetch file_path and source to delete cloud storage asset
+        const { data: docRecord } = await supabase
+          .from('documents')
+          .select('file_path, source')
+          .eq('id', id)
+          .maybeSingle();
+
+        if (docRecord?.file_path) {
+          const bucket = docRecord.source === 'inbound' ? 'inbound' : 'documents';
+          await supabase.storage.from(bucket).remove([docRecord.file_path]);
+        }
+
+        // Clean up child tables to avoid cascade delays or constraint issues
+        await supabase.from('signature_fields').delete().eq('document_id', id);
+        await supabase.from('document_recipients').delete().eq('document_id', id);
+        await supabase.from('signed_notifications').delete().eq('document_id', id);
+
+        // Await deletion of the document record
+        const { error: delErr } = await supabase.from('documents').delete().eq('id', id);
+        if (delErr) {
+          console.error('Supabase document delete error:', delErr);
+        }
+      } catch (err) {
+        console.error('Failed to delete document from cloud:', err);
+      }
     }
   },
 };

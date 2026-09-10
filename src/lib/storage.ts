@@ -125,11 +125,52 @@ export function saveLocalDocumentMeta(doc: Document, userId?: string): void {
   localStorage.setItem(key, JSON.stringify(docs));
 }
 
+export function saveAllLocalDocuments(docs: Document[], userId?: string): void {
+  const targetUserId = userId || 'guest';
+  const key = targetUserId !== 'guest' ? `inky_docs_${targetUserId}` : DOCUMENTS_KEY;
+  localStorage.setItem(key, JSON.stringify(docs));
+}
+
 export async function deleteLocalDocumentRecord(id: string, userId?: string): Promise<void> {
+  // 1. Remove from target user or guest key
   const targetUserId = userId || 'guest';
   const key = targetUserId !== 'guest' ? `inky_docs_${targetUserId}` : DOCUMENTS_KEY;
   const docs = getLocalDocuments(targetUserId).filter((d) => d.id !== id);
   localStorage.setItem(key, JSON.stringify(docs));
+
+  // 2. Also remove from DOCUMENTS_KEY if target was a user
+  if (targetUserId !== 'guest') {
+    const guestDocs = getLocalDocuments('guest').filter((d) => d.id !== id);
+    localStorage.setItem(DOCUMENTS_KEY, JSON.stringify(guestDocs));
+  }
+
+  // 3. Scan and purge across ALL inky_docs_* keys in localStorage
+  try {
+    const keysToCheck: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && (k === DOCUMENTS_KEY || k.startsWith('inky_docs_'))) {
+        keysToCheck.push(k);
+      }
+    }
+    for (const k of keysToCheck) {
+      const raw = localStorage.getItem(k);
+      if (raw && raw.includes(id)) {
+        try {
+          const list = JSON.parse(raw);
+          if (Array.isArray(list)) {
+            const filtered = list.filter((d: any) => d.id !== id);
+            localStorage.setItem(k, JSON.stringify(filtered));
+          }
+        } catch {
+          // ignore
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('Error purging doc across stores:', e);
+  }
+
   localStorage.removeItem(`inky_fields_${id}`);
   localStorage.removeItem(`inky_recipients_${id}`);
   await removePdfBytes(id);
