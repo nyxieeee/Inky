@@ -86,9 +86,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         {/* Filter pills — non-scrollable, responsive pill segment */}
         <div className="flex items-center gap-1 sm:gap-2 w-full sm:w-auto p-1 rounded-full bg-[var(--bg-stone)] sm:bg-transparent no-scrollbar">
           {[
-            { id: 'to_sign',   label: 'Uploaded' },
-            { id: 'pending',   label: 'Sent'     },
-            { id: 'completed', label: 'Recent'   },
+            { id: 'to_sign',   label: 'Drafts' },
+            { id: 'pending',   label: 'Sent'   },
+            { id: 'completed', label: 'Recent' },
           ].map((tab) => (
             <button
               key={tab.id}
