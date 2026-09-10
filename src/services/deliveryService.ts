@@ -4,6 +4,7 @@ import * as storage from '../lib/storage';
 import { uid } from '../utils';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { emailService, EmailDispatchResult } from './emailService';
+import { notificationService } from './notificationService';
 
 export interface DispatchedRecipient extends Recipient {
   signingUrl: string;
@@ -508,6 +509,60 @@ export const deliveryService = {
           .from('documents')
           .update({ status: newDocStatus, updated_at: now })
           .eq('id', document.id);
+
+        // ── Notify the document owner (sender) ──
+        // 1. Fetch the owner's email so we can send them a completion email
+        let ownerEmail: string | null = null;
+        let ownerName: string | null = null;
+        try {
+          const { data: ownerData } = await supabase
+            .from('documents')
+            .select('user_id')
+            .eq('id', document.id)
+            .maybeSingle();
+          if (ownerData?.user_id) {
+            // Look up auth user profile via admin RPC or stored metadata
+            // We store the owner info in the doc row itself if available
+            const { data: senderDoc } = await supabase
+              .from('documents')
+              .select('sender_email, sender_name')
+              .eq('id', document.id)
+              .maybeSingle();
+            // For owned (non-inbound) docs, sender_email won't be set.
+            // Fall back to the auth user lookup via get_user_email RPC if available.
+            // We'll pass the owner_user_id to the notification table and resolve from there.
+          }
+        } catch (_e) { /* non-critical */ }
+
+        // 2. Insert signed_notification row — triggers Realtime for the owner's app
+        await notificationService.insertSignedNotification({
+          documentId: document.id,
+          recipientId: recipient.id,
+          ownerUserId: document.ownerId,
+          signerName: recipient.name,
+          signerEmail: recipient.email,
+          docTitle: document.title,
+          allComplete,
+        });
+
+        // 3. Send completion email to the document owner
+        //    We need the owner's email — look it up from the document record
+        //    or from a stored sender_email field if available.
+        //    We pass this to the edge function which retrieves the owner email via service role.
+        //    If unavailable client-side, we still insert the notification (Realtime covers it).
+        try {
+          await emailService.sendSignedCompletionNotification({
+            to: '', // Will be resolved server-side by the edge function from owner_user_id
+            signerName: recipient.name,
+            signerEmail: recipient.email,
+            docTitle: document.title,
+            allComplete,
+            // Pass extra context for server-side email resolution
+            ...({ ownerUserId: document.ownerId } as any),
+          });
+        } catch (_emailErr) {
+          console.warn('Completion email dispatch skipped (non-critical):', _emailErr);
+        }
       } catch (err) {
         console.warn('Supabase sync notice during signing submission:', err);
       }

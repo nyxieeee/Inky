@@ -23,12 +23,17 @@ import { useFoldableStore } from './store/useFoldableStore';
 import { useAuthStore } from './store/useAuthStore';
 import { inboxService } from './services/inboxService';
 import { realtimeService } from './services/realtimeService';
+import { notificationService, SignedNotification } from './services/notificationService';
+import { signingRequestService, PendingSigningRequest } from './services/signingRequestService';
+import { SignerAuthGate } from './components/SignerAuthGate';
 import { InboxLink } from './types';
 
 // Icons
 import {
   PenTool, Trash2, ArrowLeft, PlusCircle,
   Inbox, Leaf, Copy, Check, Pencil, X,
+  PenLine, CheckCircle2, FileCheck2, ChevronRight, BellOff,
+  Share2, FileText, Clock,
 } from 'lucide-react';
 
 const isLocalhost =
@@ -150,6 +155,19 @@ export function App() {
   const [copiedLink, setCopiedLink] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
+  // Signed notifications (sender's inbox)
+  const [notifications, setNotifications] = useState<SignedNotification[]>([]);
+  const [isNotifLoading, setIsNotifLoading] = useState(false);
+  const unreadCount = notifications.filter((n) => !n.read).length;
+
+  // Pending signing requests (receiver's inbox)
+  const [pendingRequests, setPendingRequests] = useState<PendingSigningRequest[]>([]);
+  const [isPendingLoading, setIsPendingLoading] = useState(false);
+  const [inboxSubTab, setInboxSubTab] = useState<'to_sign' | 'signed_docs' | 'links'>('to_sign');
+
+  const pendingToSignCount = pendingRequests.filter((r) => r.status === 'pending').length;
+  const totalInboxBadge = unreadCount + pendingToSignCount;
+
   // Responsive / Foldable resize watcher
   useEffect(() => {
     const handleResize = () => updateDimensions(window.innerWidth, window.innerHeight);
@@ -164,16 +182,45 @@ export function App() {
       fetchDocuments();
       loadSignatures();
       loadInboxLinks();
+      loadNotifications();
     }
   }, [isPublicRoute]);
+
+  // Load pending signing requests whenever user email is known
+  useEffect(() => {
+    if (user?.email && !isPublicRoute) {
+      loadPendingRequests();
+    }
+  }, [user?.email, isPublicRoute]);
 
   // Supabase Realtime Subscription (Live sync across devices & remote signers)
   useEffect(() => {
     const unsubscribe = realtimeService.subscribeToAll();
+    // Refresh notification list & badge when a new signed_notification arrives
+    realtimeService.onNewNotification(() => {
+      loadNotifications();
+    });
+    // Refresh pending signing requests when a new document is dispatched to this user
+    realtimeService.onNewSigningRequest(() => {
+      loadPendingRequests();
+    });
     return () => {
       unsubscribe();
     };
-  }, []);
+  }, [user?.email]);
+
+  const loadPendingRequests = async () => {
+    if (!user?.email) return;
+    setIsPendingLoading(true);
+    try {
+      const list = await signingRequestService.listRequestsForUser(user.email);
+      setPendingRequests(list);
+    } catch (e) {
+      console.error('Failed to load pending requests', e);
+    } finally {
+      setIsPendingLoading(false);
+    }
+  };
 
   const loadInboxLinks = async () => {
     try {
@@ -184,11 +231,56 @@ export function App() {
     }
   };
 
+  const loadNotifications = async () => {
+    setIsNotifLoading(true);
+    try {
+      const list = await notificationService.listNotifications();
+      setNotifications(list);
+    } catch (e) {
+      console.error('Failed to load notifications', e);
+    } finally {
+      setIsNotifLoading(false);
+    }
+  };
+
+  const handleMarkNotifRead = async (id: string, docId: string) => {
+    // Mark read in DB
+    await notificationService.markRead(id);
+    // Optimistic update
+    setNotifications((prev) => prev.map((n) => n.id === id ? { ...n, read: true } : n));
+    // Navigate to the document
+    const doc = documents.find((d) => d.id === docId);
+    if (doc) {
+      selectDocument(doc);
+    } else {
+      // Doc may not be loaded yet — refetch first
+      await fetchDocuments();
+      const freshDoc = useDocumentStore.getState().documents.find((d) => d.id === docId);
+      if (freshDoc) selectDocument(freshDoc);
+    }
+  };
+
+  const handleMarkAllNotifRead = async () => {
+    await notificationService.markAllRead();
+    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+  };
+
   if (isInboxRoute && inboundToken) {
     return <InboundPortal token={inboundToken} />;
   }
 
   if (isSignRoute && signToken) {
+    if (!user && !guestMode) {
+      return (
+        <>
+          <SignerAuthGate
+            token={signToken}
+            onContinueAsGuest={() => setGuestMode(true)}
+          />
+          <Toast />
+        </>
+      );
+    }
     return <SignerPortal token={signToken} />;
   }
 
@@ -278,6 +370,7 @@ export function App() {
       onUploadClick={() => fileInputRef.current?.click()}
       onGenerateInboxClick={() => setIsShareInboxOpen(true)}
       onNavigateLogin={() => navigateTo('/login')}
+      unreadNotificationCount={totalInboxBadge}
     >
       {/* Hidden file input */}
       <input
@@ -456,74 +549,385 @@ export function App() {
         </div>
       )}
 
-      {/* ── Inbox Tab ──────────────────────────────────────── */}
+      {/* ── Inbox Tab ─────────────────────────────────── */}
       {activeTab === 'inbox' && (
         <div className="space-y-6 max-w-3xl mx-auto w-full animate-fadeIn pb-12">
-          <div className="flex items-center justify-between">
+
+          {/* ── Header & Sub-tab navigation ── */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
-              <h2 className="font-display font-bold text-2xl text-foreground">
-                Inbox Links
-              </h2>
-              <p className="text-sm mt-0.5 text-muted-foreground">
-                Shareable links for external senders to submit PDFs directly
+              <h1 className="font-display font-bold text-2xl sm:text-3xl text-foreground flex items-center gap-2.5">
+                <Inbox style={{ height: 26, width: 26, color: 'var(--moss)' }} />
+                Inbox
+                {totalInboxBadge > 0 && (
+                  <span
+                    className="inline-flex items-center justify-center h-6 min-w-6 px-2 rounded-full text-xs font-bold text-white shadow-sm"
+                    style={{ background: '#C18C5D' }}
+                  >
+                    {totalInboxBadge}
+                  </span>
+                )}
+              </h1>
+              <p className="text-xs sm:text-sm mt-1 text-muted-foreground">
+                Review incoming requests to sign, documents signed by others, and upload links
               </p>
             </div>
-            <button onClick={() => setIsShareInboxOpen(true)} className="btn-primary">
-              <Inbox size={15} />
-              <span>New Link</span>
-            </button>
+
+            {/* Sub-tab pills */}
+            <div className="flex items-center gap-1.5 p-1 rounded-full bg-muted/60 border border-border shrink-0 self-start sm:self-center">
+              <button
+                onClick={() => setInboxSubTab('to_sign')}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-all duration-200"
+                style={{
+                  background: inboxSubTab === 'to_sign' ? 'var(--moss)' : 'transparent',
+                  color: inboxSubTab === 'to_sign' ? '#FFFFFF' : 'var(--fg-muted)',
+                }}
+              >
+                <PenLine style={{ height: 13, width: 13 }} />
+                <span>To Sign</span>
+                {pendingToSignCount > 0 && (
+                  <span
+                    className="h-4 min-w-4 px-1 rounded-full text-[9px] font-bold flex items-center justify-center"
+                    style={{
+                      background: '#C18C5D',
+                      color: '#FFF',
+                    }}
+                  >
+                    {pendingToSignCount}
+                  </span>
+                )}
+              </button>
+
+              <button
+                onClick={() => setInboxSubTab('signed_docs')}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-all duration-200"
+                style={{
+                  background: inboxSubTab === 'signed_docs' ? 'var(--moss)' : 'transparent',
+                  color: inboxSubTab === 'signed_docs' ? '#FFFFFF' : 'var(--fg-muted)',
+                }}
+              >
+                <CheckCircle2 style={{ height: 13, width: 13 }} />
+                <span>Signed Documents</span>
+                {unreadCount > 0 && (
+                  <span
+                    className="h-4 min-w-4 px-1 rounded-full text-[9px] font-bold flex items-center justify-center"
+                    style={{
+                      background: '#C18C5D',
+                      color: '#FFF',
+                    }}
+                  >
+                    {unreadCount}
+                  </span>
+                )}
+              </button>
+
+              <button
+                onClick={() => setInboxSubTab('links')}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-all duration-200"
+                style={{
+                  background: inboxSubTab === 'links' ? 'var(--moss)' : 'transparent',
+                  color: inboxSubTab === 'links' ? '#FFFFFF' : 'var(--fg-muted)',
+                }}
+              >
+                <Share2 style={{ height: 13, width: 13 }} />
+                <span>Upload Links</span>
+              </button>
+            </div>
           </div>
 
-          <div className="space-y-3">
-            {inboxLinks.length === 0 ? (
-              <div className="card-organic rounded-[2.5rem] p-12 text-center space-y-5">
-                <div className="relative h-14 w-14 rounded-[1.5rem] flex items-center justify-center mx-auto bg-primary/10 text-primary">
-                  <Inbox size={24} />
-                </div>
+          {/* ── Sub-tab 1: Documents Waiting for Your Signature (To Sign) ── */}
+          {inboxSubTab === 'to_sign' && (
+            <div className="space-y-4 animate-fadeIn">
+              <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="font-display font-bold text-lg text-foreground">
-                    No Active Links
-                  </h3>
-                  <p className="text-sm mt-1.5 max-w-sm mx-auto text-muted-foreground">
-                    Create a shareable link to let clients or contractors submit documents directly into your signing queue.
+                  <h2 className="font-display font-bold text-xl text-foreground flex items-center gap-2">
+                    <FileText style={{ height: 20, width: 20, color: '#C18C5D' }} />
+                    Waiting for Your Signature
+                    {pendingToSignCount > 0 && (
+                      <span
+                        className="inline-flex items-center justify-center h-5 min-w-5 px-1.5 rounded-full text-[10px] font-bold text-white"
+                        style={{ background: '#C18C5D' }}
+                      >
+                        {pendingToSignCount}
+                      </span>
+                    )}
+                  </h2>
+                  <p className="text-sm mt-0.5 text-muted-foreground">
+                    Documents sent directly to your email address that require your review or signature
                   </p>
                 </div>
-                <button onClick={() => setIsShareInboxOpen(true)} className="btn-primary">
-                  <Leaf size={15} />
-                  <span>Create First Link</span>
+                <button
+                  onClick={loadPendingRequests}
+                  className="btn-ghost btn-sm text-xs"
+                  title="Refresh list"
+                >
+                  Refresh
                 </button>
               </div>
-            ) : (
-              inboxLinks.map((link) => {
-                const url = `${window.location.origin}/inbox-submit/${link.token}`;
-                return (
-                  <div key={link.id} className="card-organic rounded-[2rem] px-5 py-4 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <h4 className="font-bold text-sm text-foreground">
-                        {link.title || 'Inbox Upload Link'}
-                      </h4>
-                      <span className="badge-clay">
-                        {link.currentUses} / {link.maxUses ?? '∞'} Uses
-                      </span>
+
+              <div className="space-y-3">
+                {isPendingLoading ? (
+                  <div className="card-organic rounded-[2.5rem] p-10 flex items-center justify-center">
+                    <span className="animate-spin rounded-full h-8 w-8 border-2 border-[var(--moss)] border-t-transparent" />
+                  </div>
+                ) : pendingRequests.length === 0 ? (
+                  <div className="card-organic rounded-[2.5rem] px-5 py-10 sm:p-12 text-center space-y-4">
+                    <div className="relative h-14 w-14 rounded-[1.5rem] flex items-center justify-center mx-auto" style={{ background: 'var(--moss-dim)' }}>
+                      <FileCheck2 style={{ height: 24, width: 24, color: 'var(--moss)' }} />
                     </div>
-                    <div className="flex items-center gap-2 rounded-full px-4 py-2 bg-muted/60 border border-border">
-                      <span className="text-xs font-mono select-all truncate flex-1 text-muted-foreground">
-                        {url}
-                      </span>
-                      <button
-                        onClick={() => copyToClipboard(url)}
-                        className="shrink-0 transition-transform hover:scale-110 text-muted-foreground hover:text-foreground"
-                      >
-                        {copiedLink === url ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} />}
-                      </button>
+                    <div>
+                      <h3 className="font-display font-bold text-lg text-foreground">
+                        No Documents Waiting for You
+                      </h3>
+                      <p className="text-sm mt-1.5 max-w-sm mx-auto text-muted-foreground">
+                        You're all caught up! When someone sends a document to your email for signing, it will appear here immediately so you can sign it directly.
+                      </p>
                     </div>
                   </div>
-                );
-              })
-            )}
-          </div>
+                ) : (
+                  pendingRequests.map((req) => (
+                    <div
+                      key={req.id}
+                      className="card-organic rounded-[2rem] px-5 py-4 flex items-center justify-between gap-3 transition-all duration-200 hover:shadow-md"
+                      style={{
+                        borderLeft: req.status === 'pending' ? '3px solid #C18C5D' : '3px solid var(--moss)',
+                      }}
+                    >
+                      <div className="flex items-center gap-4 min-w-0">
+                        <div
+                          className="h-11 w-11 rounded-2xl flex items-center justify-center shrink-0"
+                          style={{
+                            background: req.status === 'pending' ? 'rgba(193,140,93,0.12)' : 'var(--moss-dim)',
+                          }}
+                        >
+                          {req.status === 'pending' ? (
+                            <PenLine style={{ height: 20, width: 20, color: '#C18C5D' }} />
+                          ) : (
+                            <CheckCircle2 style={{ height: 20, width: 20, color: 'var(--moss)' }} />
+                          )}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-bold text-sm truncate" style={{ color: 'var(--fg)' }}>
+                              {req.documentTitle}
+                            </span>
+                            {req.status === 'pending' ? (
+                              <span className="badge-clay text-[10px]">Action Required</span>
+                            ) : (
+                              <span className="badge-moss text-[10px]">Signed</span>
+                            )}
+                          </div>
+                          <p className="text-[11px] mt-0.5" style={{ color: 'var(--fg-muted)' }}>
+                            From <strong style={{ color: 'var(--fg)' }}>{req.senderName || 'Document Owner'}</strong>
+                            {req.senderEmail && ` · ${req.senderEmail}`}
+                            {' · '}
+                            {new Date(req.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                          </p>
+                        </div>
+                      </div>
+
+                      <button
+                        onClick={() => navigateTo(`/sign/${req.token}`)}
+                        className="btn-primary btn-sm shrink-0 flex items-center gap-1.5"
+                        style={{
+                          background: req.status === 'pending' ? 'var(--terracotta)' : 'var(--moss)',
+                        }}
+                      >
+                        <span>{req.status === 'pending' ? 'Sign Now' : 'View'}</span>
+                        <ChevronRight style={{ height: 13, width: 13 }} />
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ── Sub-tab 2: Signed Documents (Completed Signatures from Recipients) ── */}
+          {inboxSubTab === 'signed_docs' && (
+            <div className="space-y-4 animate-fadeIn">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="font-display font-bold text-xl text-foreground flex items-center gap-2">
+                    <CheckCircle2 style={{ height: 20, width: 20, color: 'var(--moss)' }} />
+                    Signed Documents
+                    {unreadCount > 0 && (
+                      <span
+                        className="inline-flex items-center justify-center h-5 min-w-5 px-1.5 rounded-full text-[10px] font-bold text-white"
+                        style={{ background: '#C18C5D' }}
+                      >
+                        {unreadCount}
+                      </span>
+                    )}
+                  </h2>
+                  <p className="text-sm mt-0.5 text-muted-foreground">
+                    Documents returned after signing by your recipients
+                  </p>
+                </div>
+                {unreadCount > 0 && (
+                  <button
+                    onClick={handleMarkAllNotifRead}
+                    className="btn-ghost btn-sm flex items-center gap-1.5 text-xs"
+                    title="Mark all as read"
+                  >
+                    <BellOff style={{ height: 13, width: 13 }} />
+                    <span className="hidden sm:inline">Mark all read</span>
+                  </button>
+                )}
+              </div>
+
+              <div className="space-y-3">
+                {isNotifLoading ? (
+                  <div className="card-organic rounded-[2.5rem] p-10 flex items-center justify-center">
+                    <span className="animate-spin rounded-full h-8 w-8 border-2 border-[var(--moss)] border-t-transparent" />
+                  </div>
+                ) : notifications.length === 0 ? (
+                  <div className="card-organic rounded-[2.5rem] px-5 py-10 sm:p-12 text-center space-y-4">
+                    <div className="relative h-14 w-14 rounded-[1.5rem] flex items-center justify-center mx-auto" style={{ background: 'var(--moss-dim)' }}>
+                      <FileCheck2 style={{ height: 24, width: 24, color: 'var(--moss)' }} />
+                    </div>
+                    <div>
+                      <h3 className="font-display font-bold text-lg text-foreground">
+                        No Signed Documents Yet
+                      </h3>
+                      <p className="text-sm mt-1.5 max-w-sm mx-auto text-muted-foreground">
+                        When a recipient finishes signing a document you sent, it will appear here instantly.
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  notifications.map((notif) => (
+                    <div
+                      key={notif.id}
+                      className="card-organic rounded-[2rem] px-5 py-4 flex items-center justify-between gap-3 transition-all duration-200 hover:shadow-md"
+                      style={{
+                        borderLeft: notif.read ? undefined : `3px solid ${notif.allComplete ? 'var(--moss)' : '#C18C5D'}`,
+                        opacity: notif.read ? 0.78 : 1,
+                      }}
+                    >
+                      <div className="flex items-center gap-4 min-w-0">
+                        <div
+                          className="h-11 w-11 rounded-2xl flex items-center justify-center shrink-0"
+                          style={{ background: notif.allComplete ? 'var(--moss-dim)' : 'rgba(193,140,93,0.12)' }}
+                        >
+                          {notif.allComplete
+                            ? <CheckCircle2 style={{ height: 20, width: 20, color: 'var(--moss)' }} />
+                            : <PenLine style={{ height: 20, width: 20, color: '#C18C5D' }} />
+                          }
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-bold text-sm truncate" style={{ color: 'var(--fg)' }}>
+                              {notif.docTitle}
+                            </span>
+                            {notif.allComplete
+                              ? <span className="badge-moss text-[10px]">Fully Signed</span>
+                              : <span className="badge-clay text-[10px]">Partially Signed</span>
+                            }
+                            {!notif.read && (
+                              <span
+                                className="h-2 w-2 rounded-full shrink-0"
+                                style={{ background: '#C18C5D' }}
+                              />
+                            )}
+                          </div>
+                          <p className="text-[11px] mt-0.5" style={{ color: 'var(--fg-muted)' }}>
+                            Signed by <strong style={{ color: 'var(--fg)' }}>{notif.signerName}</strong>
+                            {' · '}
+                            {notif.signerEmail}
+                            {' · '}
+                            {new Date(notif.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => handleMarkNotifRead(notif.id, notif.documentId)}
+                        className="btn-primary btn-sm shrink-0 flex items-center gap-1.5"
+                        title="Open document"
+                      >
+                        <span>View</span>
+                        <ChevronRight style={{ height: 13, width: 13 }} />
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ── Sub-tab 3: Inbox Upload Links ── */}
+          {inboxSubTab === 'links' && (
+            <div className="space-y-4 animate-fadeIn">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="font-display font-bold text-xl text-foreground flex items-center gap-2">
+                    <Inbox style={{ height: 20, width: 20, color: 'var(--moss)' }} />
+                    Inbox Upload Links
+                  </h2>
+                  <p className="text-sm mt-0.5 text-muted-foreground">
+                    Shareable links for external senders to submit PDFs directly into your queue
+                  </p>
+                </div>
+                <button onClick={() => setIsShareInboxOpen(true)} className="btn-primary btn-sm">
+                  <PlusCircle style={{ height: 13, width: 13 }} />
+                  <span>New Link</span>
+                </button>
+              </div>
+
+              <div className="space-y-3">
+                {inboxLinks.length === 0 ? (
+                  <div className="card-organic rounded-[2.5rem] p-10 text-center space-y-4">
+                    <div className="relative h-14 w-14 rounded-[1.5rem] flex items-center justify-center mx-auto" style={{ background: 'var(--moss-dim)' }}>
+                      <Inbox style={{ height: 24, width: 24, color: 'var(--moss)' }} />
+                    </div>
+                    <div>
+                      <h3 className="font-display font-bold text-base text-foreground">
+                        No Active Links
+                      </h3>
+                      <p className="text-sm mt-1.5 max-w-xs mx-auto text-muted-foreground">
+                        Create a shareable link so clients can submit PDFs directly into your signing queue.
+                      </p>
+                    </div>
+                    <button onClick={() => setIsShareInboxOpen(true)} className="btn-primary btn-sm mx-auto">
+                      <Leaf style={{ height: 13, width: 13 }} />
+                      <span>Create First Link</span>
+                    </button>
+                  </div>
+                ) : (
+                  inboxLinks.map((link) => {
+                    const url = `${window.location.origin}/inbox-submit/${link.token}`;
+                    return (
+                      <div key={link.id} className="card-organic rounded-[2rem] px-5 py-4 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <h4 className="font-bold text-sm text-foreground">
+                            {link.title || 'Inbox Upload Link'}
+                          </h4>
+                          <span className="badge-clay">
+                            {link.currentUses} / {link.maxUses ?? '∞'} Uses
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2 rounded-full px-4 py-2 bg-muted/60 border border-border">
+                          <span className="text-xs font-mono select-all truncate flex-1 text-muted-foreground">
+                            {url}
+                          </span>
+                          <button
+                            onClick={() => copyToClipboard(url)}
+                            className="shrink-0 transition-transform hover:scale-110 text-muted-foreground hover:text-foreground"
+                          >
+                            {copiedLink === url ? <Check style={{ height: 14, width: 14, color: 'var(--moss)' }} /> : <Copy style={{ height: 14, width: 14 }} />}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          )}
+
         </div>
       )}
+
 
       {/* ── History Tab ─────────────────────────────────────── */}
       {activeTab === 'history' && (

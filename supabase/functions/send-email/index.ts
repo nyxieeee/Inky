@@ -1,5 +1,6 @@
 // @ts-nocheck
 import nodemailer from 'npm:nodemailer@6.9.13';
+import { createClient } from 'npm:@supabase/supabase-js@2';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -7,13 +8,20 @@ const corsHeaders = {
 };
 
 interface SendEmailPayload {
+  type?: 'invitation' | 'completion';
   to: string;
   recipientName?: string;
   senderName?: string;
   senderEmail?: string;
   docTitle: string;
-  signingUrl: string;
+  signingUrl?: string;
   customMessage?: string;
+  // Completion-specific
+  signerName?: string;
+  signerEmail?: string;
+  allComplete?: boolean;
+  appUrl?: string;
+  ownerUserId?: string;
 }
 
 function buildInkyEmailHtml({
@@ -232,6 +240,164 @@ function buildInkyEmailHtml({
 </html>`;
 }
 
+function buildCompletionEmailHtml({
+  senderName,
+  signerName,
+  signerEmail,
+  docTitle,
+  allComplete,
+  appUrl,
+}: {
+  senderName: string;
+  signerName: string;
+  signerEmail: string;
+  docTitle: string;
+  allComplete: boolean;
+  appUrl: string;
+}) {
+  const safeDocTitle = docTitle.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const safeSenderName = (senderName || 'there').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const safeSignerName = (signerName || 'A signer').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const safeSignerEmail = (signerEmail || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+  const statusText = allComplete
+    ? '🎉 All signers have completed their signatures!'
+    : '✍️ A signer has completed their portion.';
+  const statusBadgeText = allComplete ? 'Fully Signed' : 'Partially Signed';
+  const statusBadgeColor = allComplete ? '#5D7052' : '#C18C5D';
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Document Signed: ${safeDocTitle}</title>
+  <link href="https://fonts.googleapis.com/css2?family=Philosopher:ital,wght@0,400;0,700;1,400;1,700&display=swap" rel="stylesheet" />
+  <style>
+    @media (prefers-color-scheme: dark) {
+      .email-bg { background-color: #1A1D17 !important; }
+      .email-card { background-color: #1E2219 !important; border-color: rgba(255,255,255,0.08) !important; }
+      .email-title { color: #E8E5DC !important; }
+      .email-sub { color: #B0ADA2 !important; }
+      .email-doc-box { background-color: #2A2E24 !important; border-color: rgba(255,255,255,0.08) !important; }
+      .email-footer { color: #8A8A7E !important; }
+    }
+    @media only screen and (max-width: 600px) {
+      .email-card-td { padding: 28px 20px !important; }
+      .btn-cta { display: block !important; width: 100% !important; text-align: center !important; padding: 15px 20px !important; }
+    }
+  </style>
+</head>
+<body class="email-bg" style="margin: 0; padding: 36px 12px; background-color: #FDFCF8; font-family: 'Philosopher', Georgia, serif; color: #2C2C24;">
+  
+  <div style="display: none; max-height: 0; overflow: hidden; font-size: 1px; color: #FDFCF8; mso-hide: all;">
+    ${safeSignerName} has signed "${safeDocTitle}" — ${allComplete ? 'all signers complete!' : 'awaiting more signers.'}
+  </div>
+
+  <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="max-width: 550px; margin: 0 auto;">
+    <tr>
+      <td>
+        <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" class="email-card" style="background-color: #FEFEFA; border-radius: 26px; border: 1px solid #DED8CF; box-shadow: 0 10px 40px -10px rgba(193,140,93,0.18); overflow: hidden;">
+          <tr>
+            <td class="email-card-td" style="padding: 40px 34px;">
+
+              <!-- Brand Header -->
+              <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%">
+                <tr>
+                  <td style="vertical-align: middle;">
+                    <table role="presentation" border="0" cellpadding="0" cellspacing="0">
+                      <tr>
+                        <td style="width: 38px; height: 38px; background-color: #5D7052; border-radius: 13px; text-align: center; vertical-align: middle;">
+                          <span style="color: #F3F4F1; font-size: 19px; line-height: 38px; display: block;">✍</span>
+                        </td>
+                        <td style="padding-left: 12px; vertical-align: middle;">
+                          <span class="email-title" style="font-family: 'Philosopher', Georgia, serif; font-size: 23px; font-weight: 700; color: #2C2C24;">Inky</span>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                  <td style="text-align: right; vertical-align: middle;">
+                    <span style="display: inline-block; background-color: ${statusBadgeColor}22; color: ${statusBadgeColor}; font-family: -apple-system, sans-serif; font-size: 10.5px; font-weight: 700; padding: 5px 13px; border-radius: 9999px; text-transform: uppercase; letter-spacing: 0.6px; border: 1px solid ${statusBadgeColor}44;">
+                      ${statusBadgeText}
+                    </span>
+                  </td>
+                </tr>
+              </table>
+
+              <div style="height: 1px; background-color: #DED8CF; margin: 26px 0 24px 0; opacity: 0.75;"></div>
+
+              <!-- Headline -->
+              <h1 class="email-title" style="margin: 0; font-family: 'Philosopher', Georgia, serif; font-size: 23px; font-weight: 700; color: #2C2C24; line-height: 1.3;">
+                ${allComplete ? 'Your document has been fully signed!' : 'A signer has completed their signature'}
+              </h1>
+              <p class="email-sub" style="margin: 12px 0 0 0; font-family: 'Philosopher', Georgia, serif; font-size: 15px; color: #5A5A4E; line-height: 1.65;">
+                Hello <strong>${safeSenderName}</strong>,<br/>
+                ${statusText}
+              </p>
+
+              <!-- Signer Info Box -->
+              <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="margin-top: 24px;">
+                <tr>
+                  <td class="email-doc-box" style="background-color: #F0EBE5; border: 1px solid #DED8CF; border-radius: 18px; padding: 18px 20px;">
+                    <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%">
+                      <tr>
+                        <td style="width: 42px; vertical-align: top;">
+                          <div style="width: 36px; height: 42px; background-color: #5D7052; border-radius: 9px; text-align: center; line-height: 42px; font-size: 18px;">
+                            ✅
+                          </div>
+                        </td>
+                        <td style="padding-left: 14px; vertical-align: top;">
+                          <div style="font-family: 'Philosopher', Georgia, serif; font-size: 15px; font-weight: 700; color: #2C2C24; line-height: 1.35;">
+                            ${safeDocTitle}
+                          </div>
+                          <div style="font-family: -apple-system, sans-serif; font-size: 12px; color: #78786C; margin-top: 5px; line-height: 1.5;">
+                            Signed by: <strong style="color: #2C2C24;">${safeSignerName}</strong><br/>
+                            Email: ${safeSignerEmail}
+                          </div>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+
+              <!-- CTA -->
+              <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="margin-top: 28px;">
+                <tr>
+                  <td style="text-align: center;">
+                    <a href="${appUrl}" target="_blank" rel="noopener noreferrer" class="btn-cta" style="display: inline-block; background-color: #5D7052; color: #F3F4F1; font-family: 'Philosopher', Georgia, serif; font-size: 16px; font-weight: 700; text-decoration: none; padding: 15px 38px; border-radius: 9999px; box-shadow: 0 6px 24px -2px rgba(93,112,82,0.35); text-align: center;">
+                      Open Inky &rarr;
+                    </a>
+                  </td>
+                </tr>
+              </table>
+
+              <div style="margin-top: 24px; padding-top: 20px; border-top: 1px dashed #DED8CF;">
+                <p class="email-footer" style="margin: 0; font-family: -apple-system, sans-serif; font-size: 11px; color: #78786C; line-height: 1.5; text-align: center;">
+                  🔒 256-Bit SSL Encrypted &bull; Audit Trail Recorded &bull; Sent via Inky
+                </p>
+              </div>
+
+            </td>
+          </tr>
+        </table>
+
+        <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="margin-top: 20px;">
+          <tr>
+            <td class="email-footer" style="text-align: center; font-family: 'Philosopher', Georgia, serif; font-size: 12px; color: #78786C; line-height: 1.65;">
+              Delivered securely via <strong>Inky</strong> — Electronic Signatures.
+            </td>
+          </tr>
+        </table>
+
+      </td>
+    </tr>
+  </table>
+
+</body>
+</html>`;
+}
+
 Deno.serve(async (req) => {
   // 1. Handle CORS preflight
   if (req.method === 'OPTIONS') {
@@ -258,20 +424,7 @@ Deno.serve(async (req) => {
 
     const payload: SendEmailPayload = await req.json();
 
-    if (!payload.to || !payload.signingUrl || !payload.docTitle) {
-      return new Response(
-        JSON.stringify({ error: 'Missing required fields: to, docTitle, or signingUrl' }),
-        {
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        }
-      );
-    }
-
     const cleanPassword = GMAIL_APP_PASSWORD.replace(/\s+/g, '');
-    const senderName = payload.senderName || 'Inky Document Signatures';
-    const recipientName = payload.recipientName || '';
-    const subject = `Signature requested: ${payload.docTitle}`;
 
     // 2. Setup Nodemailer Transporter
     const transporter = nodemailer.createTransport({
@@ -282,12 +435,99 @@ Deno.serve(async (req) => {
       },
     });
 
+    // ── COMPLETION EMAIL (signed notification to the original sender) ──
+    if (payload.type === 'completion') {
+      const { signerName, signerEmail, docTitle, allComplete, appUrl, ownerUserId } = payload;
+
+      if (!signerName || !docTitle) {
+        return new Response(
+          JSON.stringify({ error: 'Missing required fields for completion email: signerName, docTitle' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      // Resolve owner email from Supabase auth using service role key
+      let ownerEmail = payload.to || '';
+      let ownerDisplayName = '';
+      if (!ownerEmail && ownerUserId) {
+        const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
+        const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+        if (SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY) {
+          try {
+            const adminClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+              auth: { autoRefreshToken: false, persistSession: false },
+            });
+            const { data: userData } = await adminClient.auth.admin.getUserById(ownerUserId);
+            ownerEmail = userData?.user?.email || '';
+            ownerDisplayName =
+              userData?.user?.user_metadata?.full_name ||
+              userData?.user?.email?.split('@')[0] ||
+              'there';
+          } catch (err) {
+            console.warn('Could not resolve owner email from auth:', err);
+          }
+        }
+      }
+
+      if (!ownerEmail) {
+        console.warn('Completion email skipped: could not resolve owner email');
+        return new Response(
+          JSON.stringify({ success: false, error: 'Could not resolve owner email' }),
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const subject = allComplete
+        ? `✅ "${docTitle}" has been fully signed`
+        : `✍️ ${signerName} signed "${docTitle}"`;
+
+      const html = buildCompletionEmailHtml({
+        senderName: ownerDisplayName || 'there',
+        signerName: signerName || 'A signer',
+        signerEmail: signerEmail || '',
+        docTitle,
+        allComplete: Boolean(allComplete),
+        appUrl: appUrl || 'https://inky.app',
+      });
+
+      const text = `Hello ${ownerDisplayName || 'there'},\n\n${signerName} has signed "${docTitle}".\n${allComplete ? 'All signers have completed their signatures!' : 'Awaiting other signers.'}\n\nOpen Inky to review: ${appUrl || 'https://inky.app'}\n\n— Inky Document Signatures`;
+
+      const info = await transporter.sendMail({
+        from: `"Inky Document Signatures" <${GMAIL_USER}>`,
+        to: ownerEmail,
+        subject,
+        text,
+        html,
+      });
+
+      console.log(`✅ Completion email sent to ${ownerEmail}: ${info.messageId}`);
+      return new Response(
+        JSON.stringify({ success: true, messageId: info.messageId }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // ── INVITATION EMAIL (default path) ──
+    if (!payload.to || !payload.signingUrl || !payload.docTitle) {
+      return new Response(
+        JSON.stringify({ error: 'Missing required fields: to, docTitle, or signingUrl' }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      );
+    }
+
+    const senderName = payload.senderName || 'Inky Document Signatures';
+    const recipientName = payload.recipientName || '';
+    const subject = `Signature requested: ${payload.docTitle}`;
+
     // 3. Build HTML and text fallbacks
     const html = buildInkyEmailHtml({
       recipientName,
       senderName,
       docTitle: payload.docTitle,
-      signingUrl: payload.signingUrl,
+      signingUrl: payload.signingUrl!,
       customMessage: payload.customMessage,
     });
 

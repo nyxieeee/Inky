@@ -16,6 +16,7 @@ interface FoldableLayoutProps {
   onUploadClick: () => void;
   onGenerateInboxClick: () => void;
   onNavigateLogin?: () => void;
+  unreadNotificationCount?: number;
 }
 
 // Ambient background blob — brings depth and organic atmosphere
@@ -34,6 +35,7 @@ export const FoldableLayout: React.FC<FoldableLayoutProps> = ({
   onUploadClick,
   onGenerateInboxClick,
   onNavigateLogin,
+  unreadNotificationCount = 0,
 }) => {
   const { user, openAuthModal } = useAuthStore();
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
@@ -155,7 +157,7 @@ export const FoldableLayout: React.FC<FoldableLayoutProps> = ({
             <button
               key={id}
               onClick={() => setActiveTab(id)}
-              className="flex items-center gap-3 w-full px-4 py-2.5 rounded-2xl text-base font-bold transition-all duration-200"
+              className="flex items-center gap-3 w-full px-4 py-2.5 rounded-2xl text-base font-bold transition-all duration-200 relative"
               style={{
                 background: activeTab === id ? 'var(--moss-dim)' : 'transparent',
                 color: activeTab === id ? 'var(--moss)' : 'var(--fg-muted)',
@@ -163,6 +165,14 @@ export const FoldableLayout: React.FC<FoldableLayoutProps> = ({
             >
               <Icon style={{ height: 18, width: 18, flexShrink: 0 }} />
               <span>{label}</span>
+              {id === 'inbox' && unreadNotificationCount > 0 && (
+                <span
+                  className="absolute top-1.5 right-2 flex items-center justify-center h-5 min-w-5 px-1 rounded-full text-[10px] font-bold text-white animate-pulse"
+                  style={{ background: '#C18C5D', boxShadow: '0 2px 8px rgba(193,140,93,0.5)' }}
+                >
+                  {unreadNotificationCount > 9 ? '9+' : unreadNotificationCount}
+                </span>
+              )}
             </button>
           ))}
         </nav>
@@ -183,7 +193,7 @@ export const FoldableLayout: React.FC<FoldableLayoutProps> = ({
           <button
             key={id}
             onClick={() => setActiveTab(id)}
-            className="flex flex-col items-center gap-0.5 px-4 py-1 rounded-2xl transition-all duration-200"
+            className="flex flex-col items-center gap-0.5 px-4 py-1 rounded-2xl transition-all duration-200 relative"
             style={{
               color: activeTab === id ? 'var(--moss)' : 'var(--fg-muted)',
               background: activeTab === id ? 'var(--moss-dim)' : 'transparent',
@@ -191,6 +201,14 @@ export const FoldableLayout: React.FC<FoldableLayoutProps> = ({
           >
             <Icon style={{ height: 20, width: 20 }} />
             <span className="text-[10px] font-bold tracking-wide">{label}</span>
+            {id === 'inbox' && unreadNotificationCount > 0 && (
+              <span
+                className="absolute -top-0.5 -right-0.5 flex items-center justify-center h-4 min-w-4 px-1 rounded-full text-[9px] font-bold text-white"
+                style={{ background: '#C18C5D' }}
+              >
+                {unreadNotificationCount > 9 ? '9+' : unreadNotificationCount}
+              </span>
+            )}
           </button>
         ))}
       </nav>

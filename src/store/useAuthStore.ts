@@ -19,7 +19,7 @@ interface AuthState {
 
   // Auth actions
   initializeAuth: () => Promise<void>;
-  signInWithGoogle: () => Promise<{ success: boolean; error?: string }>;
+  signInWithGoogle: (redirectTo?: string) => Promise<{ success: boolean; error?: string }>;
   signInWithDemoGoogle: () => void;
   signInWithMagicLink: (email: string) => Promise<{ success: boolean; error?: string }>;
   signInWithPassword: (email: string, password: string) => Promise<{ success: boolean; error?: string; session?: Session | null; user?: User | null }>;
@@ -79,7 +79,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
   },
 
-  signInWithGoogle: async () => {
+  signInWithGoogle: async (redirectTo?: string) => {
     if (!supabase) {
       const msg = 'Supabase credentials needed. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to .env to use Google Sign-In.';
       useToastStore.getState().showToast(msg, 'info');
@@ -91,7 +91,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: window.location.origin,
+          redirectTo: redirectTo || (typeof window !== 'undefined' ? window.location.href : undefined),
         },
       });
 
