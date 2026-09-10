@@ -522,7 +522,14 @@ export const deliveryService = {
               .update({
                 value: up.value,
                 font_family: up.fontFamily,
-                ...(up.fieldMeta ? { x: up.fieldMeta.x, y: up.fieldMeta.y } : {}),
+                ...(up.fieldMeta
+                  ? {
+                      x: up.fieldMeta.x,
+                      y: up.fieldMeta.y,
+                      width: up.fieldMeta.width,
+                      height: up.fieldMeta.height,
+                    }
+                  : {}),
               })
               .eq('id', up.fieldId);
           } else if (up.fieldMeta) {

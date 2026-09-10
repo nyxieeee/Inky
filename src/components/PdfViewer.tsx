@@ -203,7 +203,26 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
   };
 
   const isFieldLocked = (field: SignatureField) => {
-    return Boolean(field.value && (field.signerOrder || field.signerEmail || field.signerName));
+    // 1. Any field with a value signed by a recipient
+    if (field.value && (field.signerOrder || field.signerEmail || field.signerName)) {
+      return true;
+    }
+    // 2. If the recipient assigned to this field has signed
+    const assignedRec = recipients.find(
+      (r) =>
+        (field.signerOrder && r.signingOrder === field.signerOrder) ||
+        (field.signerEmail && r.email.toLowerCase() === field.signerEmail.toLowerCase()) ||
+        (field.signerId && r.id === field.signerId)
+    );
+    if (assignedRec && assignedRec.status === 'signed') {
+      return true;
+    }
+    // 3. If document is marked completed, any field with a value is locked
+    const selectedDoc = useDocumentStore.getState().selectedDoc;
+    if (selectedDoc?.status === 'completed' && field.value) {
+      return true;
+    }
+    return false;
   };
 
   const removeField = (id: string, e: React.MouseEvent) => {
