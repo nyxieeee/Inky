@@ -31,9 +31,10 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs
 
 interface SignerPortalProps {
   token: string;
+  onBack?: () => void;
 }
 
-export const SignerPortal: React.FC<SignerPortalProps> = ({ token }) => {
+export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => {
   const [loading, setLoading] = useState(true);
   const [context, setContext] = useState<{
     recipient: Recipient;
@@ -233,6 +234,96 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token }) => {
     };
   }, [pdfDoc, currentPage, scale]);
 
+  // Dragging event handlers for mouse & touch
+  const startDrag = (fieldId: string, clientX: number, clientY: number, e?: React.SyntheticEvent) => {
+    e?.stopPropagation();
+    if (!containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    const currentFields = fieldsRef.current;
+    const field = currentFields.find((f) => f.id === fieldId);
+    if (!field) return;
+
+    const fieldPxX = (field.x / 100) * rect.width;
+    const fieldPxY = (field.y / 100) * rect.height;
+
+    hasDraggedRef.current = false;
+    dragJustEndedRef.current = false;
+    setDraggingFieldId(fieldId);
+    setDragOffset({
+      x: clientX - rect.left - fieldPxX,
+      y: clientY - rect.top - fieldPxY,
+    });
+  };
+
+  const onDragMove = (clientX: number, clientY: number) => {
+    if (!draggingFieldId || !containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    const currentFields = fieldsRef.current;
+    const field = currentFields.find((f) => f.id === draggingFieldId);
+    if (!field) return;
+
+    const mouseX = clientX - rect.left - dragOffset.x;
+    const mouseY = clientY - rect.top - dragOffset.y;
+
+    const pctX = Math.max(0, Math.min(100 - field.width, (mouseX / rect.width) * 100));
+    const pctY = Math.max(0, Math.min(100 - field.height, (mouseY / rect.height) * 100));
+
+    hasDraggedRef.current = true;
+
+    setFields((prev) =>
+      prev.map((f) =>
+        f.id === draggingFieldId
+          ? { ...f, x: Math.round(pctX * 10) / 10, y: Math.round(pctY * 10) / 10 }
+          : f
+      )
+    );
+  };
+
+  useEffect(() => {
+    if (!draggingFieldId) return;
+
+    const handlePointerMove = (e: MouseEvent) => {
+      onDragMove(e.clientX, e.clientY);
+    };
+    const handlePointerUp = () => {
+      if (hasDraggedRef.current) {
+        dragJustEndedRef.current = true;
+        setTimeout(() => {
+          dragJustEndedRef.current = false;
+          hasDraggedRef.current = false;
+        }, 200);
+      }
+      setDraggingFieldId(null);
+    };
+    const handleTouchMove = (e: TouchEvent) => {
+      if (e.touches.length === 1) {
+        onDragMove(e.touches[0].clientX, e.touches[0].clientY);
+      }
+    };
+    const handleTouchEnd = () => {
+      if (hasDraggedRef.current) {
+        dragJustEndedRef.current = true;
+        setTimeout(() => {
+          dragJustEndedRef.current = false;
+          hasDraggedRef.current = false;
+        }, 200);
+      }
+      setDraggingFieldId(null);
+    };
+
+    window.addEventListener('mousemove', handlePointerMove);
+    window.addEventListener('mouseup', handlePointerUp);
+    window.addEventListener('touchmove', handleTouchMove, { passive: false });
+    window.addEventListener('touchend', handleTouchEnd);
+
+    return () => {
+      window.removeEventListener('mousemove', handlePointerMove);
+      window.removeEventListener('mouseup', handlePointerUp);
+      window.removeEventListener('touchmove', handleTouchMove);
+      window.removeEventListener('touchend', handleTouchEnd);
+    };
+  }, [draggingFieldId, dragOffset]);
+
   if (loading) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center p-4 bg-[var(--bg)]">
@@ -372,95 +463,7 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token }) => {
     : filledCount > 0;
   const nextPendingField = myPendingFields[0];
 
-  // Dragging event handlers for mouse & touch
-  const startDrag = (fieldId: string, clientX: number, clientY: number, e?: React.SyntheticEvent) => {
-    e?.stopPropagation();
-    if (!containerRef.current) return;
-    const rect = containerRef.current.getBoundingClientRect();
-    const currentFields = fieldsRef.current;
-    const field = currentFields.find((f) => f.id === fieldId);
-    if (!field) return;
 
-    const fieldPxX = (field.x / 100) * rect.width;
-    const fieldPxY = (field.y / 100) * rect.height;
-
-    hasDraggedRef.current = false;
-    dragJustEndedRef.current = false;
-    setDraggingFieldId(fieldId);
-    setDragOffset({
-      x: clientX - rect.left - fieldPxX,
-      y: clientY - rect.top - fieldPxY,
-    });
-  };
-
-  const onDragMove = (clientX: number, clientY: number) => {
-    if (!draggingFieldId || !containerRef.current) return;
-    const rect = containerRef.current.getBoundingClientRect();
-    const currentFields = fieldsRef.current;
-    const field = currentFields.find((f) => f.id === draggingFieldId);
-    if (!field) return;
-
-    const mouseX = clientX - rect.left - dragOffset.x;
-    const mouseY = clientY - rect.top - dragOffset.y;
-
-    const pctX = Math.max(0, Math.min(100 - field.width, (mouseX / rect.width) * 100));
-    const pctY = Math.max(0, Math.min(100 - field.height, (mouseY / rect.height) * 100));
-
-    hasDraggedRef.current = true;
-
-    setFields((prev) =>
-      prev.map((f) =>
-        f.id === draggingFieldId
-          ? { ...f, x: Math.round(pctX * 10) / 10, y: Math.round(pctY * 10) / 10 }
-          : f
-      )
-    );
-  };
-
-  useEffect(() => {
-    if (!draggingFieldId) return;
-
-    const handlePointerMove = (e: MouseEvent) => {
-      onDragMove(e.clientX, e.clientY);
-    };
-    const handlePointerUp = () => {
-      if (hasDraggedRef.current) {
-        dragJustEndedRef.current = true;
-        setTimeout(() => {
-          dragJustEndedRef.current = false;
-          hasDraggedRef.current = false;
-        }, 200);
-      }
-      setDraggingFieldId(null);
-    };
-    const handleTouchMove = (e: TouchEvent) => {
-      if (e.touches.length === 1) {
-        onDragMove(e.touches[0].clientX, e.touches[0].clientY);
-      }
-    };
-    const handleTouchEnd = () => {
-      if (hasDraggedRef.current) {
-        dragJustEndedRef.current = true;
-        setTimeout(() => {
-          dragJustEndedRef.current = false;
-          hasDraggedRef.current = false;
-        }, 200);
-      }
-      setDraggingFieldId(null);
-    };
-
-    window.addEventListener('mousemove', handlePointerMove);
-    window.addEventListener('mouseup', handlePointerUp);
-    window.addEventListener('touchmove', handleTouchMove, { passive: false });
-    window.addEventListener('touchend', handleTouchEnd);
-
-    return () => {
-      window.removeEventListener('mousemove', handlePointerMove);
-      window.removeEventListener('mouseup', handlePointerUp);
-      window.removeEventListener('touchmove', handleTouchMove);
-      window.removeEventListener('touchend', handleTouchEnd);
-    };
-  }, [draggingFieldId, dragOffset]);
 
   const handleOpenSigModal = (fieldId: string) => {
     setActiveSigFieldId(fieldId);
@@ -632,7 +635,18 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token }) => {
           borderColor: 'var(--border-light)',
         }}
       >
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3">
+          <button
+            onClick={() => {
+              if (onBack) onBack();
+              else window.location.href = '/';
+            }}
+            className="h-9 w-9 rounded-2xl border border-[var(--border-light)] bg-white/80 dark:bg-black/20 flex items-center justify-center hover:bg-black/5 dark:hover:bg-white/5 transition-all text-[var(--fg-muted)] hover:text-[var(--fg)]"
+            title="Back to Inky"
+            aria-label="Back to Inky"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </button>
           <div className="h-9 w-9 rounded-2xl flex items-center justify-center bg-[var(--moss-dim)]">
             <Leaf className="h-5 w-5 text-[var(--moss)]" />
           </div>

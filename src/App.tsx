@@ -288,7 +288,7 @@ export function App() {
         </>
       );
     }
-    return <SignerPortal token={signToken} />;
+    return <SignerPortal token={signToken} onBack={() => navigateTo('/')} />;
   }
 
   // Initial auth check loading state
