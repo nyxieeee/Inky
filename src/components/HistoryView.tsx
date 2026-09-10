@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 import { Document } from '../types';
 import * as storage from '../lib/storage';
-import { downloadBlob } from '../utils';
+import { downloadBlob, formatDateTime } from '../utils';
 
 interface HistoryViewProps {
   documents: Document[];
@@ -145,11 +145,7 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
                   <p className="text-xs mt-0.5" style={{ color: 'var(--fg-muted)' }}>
                     {doc.pageCount} {doc.pageCount === 1 ? 'page' : 'pages'}
                     {' · '}
-                    {new Date(doc.updatedAt || doc.createdAt).toLocaleDateString('en-US', {
-                      month: 'short',
-                      day: 'numeric',
-                      year: 'numeric',
-                    })}
+                    {formatDateTime(doc.updatedAt || doc.createdAt)}
                   </p>
                 </div>
               </div>

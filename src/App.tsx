@@ -27,6 +27,7 @@ import { notificationService, SignedNotification } from './services/notification
 import { signingRequestService, PendingSigningRequest } from './services/signingRequestService';
 import { SignerAuthGate } from './components/SignerAuthGate';
 import { InboxLink } from './types';
+import { formatDateTime } from './utils';
 
 // Icons
 import {
@@ -750,7 +751,7 @@ export function App() {
                             From <strong style={{ color: 'var(--fg)' }}>{req.senderName || 'Document Owner'}</strong>
                             {req.senderEmail && ` · ${req.senderEmail}`}
                             {' · '}
-                            {new Date(req.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                            {formatDateTime(req.createdAt)}
                           </p>
                         </div>
                       </div>
@@ -879,7 +880,7 @@ export function App() {
                             {' · '}
                             {notif.signerEmail}
                             {' · '}
-                            {new Date(notif.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                            {formatDateTime(notif.createdAt)}
                           </p>
                         </div>
                       </div>

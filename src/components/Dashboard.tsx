@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 import { Document } from '../types';
 import * as storage from '../lib/storage';
-import { downloadBlob } from '../utils';
+import { downloadBlob, formatDateTime } from '../utils';
 
 interface DashboardViewProps {
   documents: Document[];
@@ -176,9 +176,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   <p className="text-[11px] mt-0.5" style={{ color: 'var(--fg-muted)' }}>
                     {doc.pageCount} {doc.pageCount === 1 ? 'page' : 'pages'}
                     {' · '}
-                    {new Date(doc.createdAt).toLocaleDateString('en-US', {
-                      month: 'short', day: 'numeric', year: 'numeric',
-                    })}
+                    {formatDateTime(doc.status === 'sent' || doc.status === 'completed' ? (doc.updatedAt || doc.createdAt) : doc.createdAt)}
                   </p>
                 </div>
               </div>
