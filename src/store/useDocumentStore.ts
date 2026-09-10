@@ -75,7 +75,7 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
   },
 
   selectDocument: async (doc) => {
-    set({ isLoading: true });
+    set({ isLoading: true, selectedDoc: null, fields: [] });
     try {
       const details = await documentService.getDetails(doc.id);
       set({

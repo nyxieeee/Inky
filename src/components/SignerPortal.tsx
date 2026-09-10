@@ -78,9 +78,16 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
   const fieldsRef = useRef(fields);
   fieldsRef.current = fields;
 
-  // Load context on mount
+  // Load context on mount / when token changes
   useEffect(() => {
     let isMounted = true;
+    setLoading(true);
+    setContext(null);
+    setFields([]);
+    setFieldValues({});
+    setSelectedFieldId(null);
+    setSubmittedResult(null);
+
     deliveryService.getSignerContext(token)
       .then((ctx) => {
         if (!isMounted) return;

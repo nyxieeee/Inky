@@ -105,23 +105,32 @@ async function ensureCloudSync(docId: string, recipients: Recipient[]): Promise<
   // 2. Sync signature fields
   const fields = storage.getLocalDocumentFields(docId);
   if (fields.length > 0) {
-    const fieldRows = fields.map((f) => ({
-      id: f.id,
-      document_id: docId,
-      page_number: f.pageNumber,
-      x: f.x,
-      y: f.y,
-      width: f.width,
-      height: f.height,
-      field_type: f.fieldType,
-      value: f.value || null,
-      font_family: f.fontFamily || null,
-      required: f.required ?? true,
-      signer_id: f.signerId || null,
-      signer_email: f.signerEmail || null,
-      signer_order: f.signerOrder || null,
-      signer_name: f.signerName || null,
-    }));
+    const fieldRows = fields.map((f) => {
+      const isAssigned = Boolean(f.signerOrder || f.signerEmail || f.signerId);
+      const targetRec = recipients.find(
+        (r) => (f.signerOrder && r.signingOrder === f.signerOrder) || (f.signerEmail && r.email.toLowerCase() === f.signerEmail.toLowerCase())
+      );
+      const isAlreadySigned = targetRec && targetRec.status === 'signed';
+      const cleanValue = (isAssigned && !isAlreadySigned) ? null : (f.value || null);
+
+      return {
+        id: f.id,
+        document_id: docId,
+        page_number: f.pageNumber,
+        x: f.x,
+        y: f.y,
+        width: f.width,
+        height: f.height,
+        field_type: f.fieldType,
+        value: cleanValue,
+        font_family: f.fontFamily || null,
+        required: f.required ?? true,
+        signer_id: f.signerId || null,
+        signer_email: f.signerEmail || null,
+        signer_order: f.signerOrder || null,
+        signer_name: f.signerName || null,
+      };
+    });
     const { error: fieldsErr } = await supabase.from('signature_fields').upsert(fieldRows, { onConflict: 'id' });
     if (fieldsErr) {
       console.error('Failed to sync fields to Supabase:', fieldsErr);
@@ -317,7 +326,15 @@ export const deliveryService = {
       const recipients = storage.getLocalDocumentRecipients(doc.id);
       const rec = recipients.find((r) => r.token === token);
       if (rec) {
-        const fields = storage.getLocalDocumentFields(doc.id);
+        let fields = storage.getLocalDocumentFields(doc.id);
+        if (rec.status !== 'signed') {
+          fields = fields.map((f) => {
+            const isMine = (f.signerOrder && f.signerOrder === rec.signingOrder) ||
+                           (f.signerEmail && f.signerEmail.toLowerCase() === rec.email.toLowerCase()) ||
+                           (f.signerId && f.signerId === rec.id);
+            return isMine ? { ...f, value: '' } : f;
+          });
+        }
         const pdfBlob = await storage.getLocalPdfBlob(doc.id);
         return { recipient: rec, document: doc, fields, pdfBlob };
       }
@@ -369,22 +386,28 @@ export const deliveryService = {
               .select('*')
               .eq('document_id', rec.documentId);
 
-            const fields: SignatureField[] = (fieldsData || []).map((f) => ({
-              id: f.id,
-              documentId: f.document_id,
-              pageNumber: f.page_number,
-              x: f.x,
-              y: f.y,
-              width: f.width,
-              height: f.height,
-              fieldType: f.field_type,
-              value: f.value,
-              fontFamily: f.font_family,
-              required: f.required ?? true,
-              signerId: f.signer_id,
-              signerEmail: f.signer_email,
-              signerOrder: f.signer_order,
-            }));
+            const fields: SignatureField[] = (fieldsData || []).map((f) => {
+              const isMine = (f.signer_order && f.signer_order === rec.signingOrder) ||
+                             (f.signer_email && f.signer_email.toLowerCase() === rec.email.toLowerCase()) ||
+                             (f.signer_id && f.signer_id === rec.id);
+              return {
+                id: f.id,
+                documentId: f.document_id,
+                pageNumber: f.page_number,
+                x: f.x,
+                y: f.y,
+                width: f.width,
+                height: f.height,
+                fieldType: f.field_type,
+                value: (isMine && rec.status !== 'signed') ? '' : (f.value || ''),
+                fontFamily: f.font_family,
+                required: f.required ?? true,
+                signerId: f.signer_id,
+                signerEmail: f.signer_email,
+                signerOrder: f.signer_order,
+                signerName: f.signer_name,
+              };
+            });
 
             // Download PDF from storage bucket
             let pdfBlob: Blob | null = null;

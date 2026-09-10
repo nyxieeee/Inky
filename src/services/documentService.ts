@@ -268,10 +268,22 @@ export const documentService = {
       }
     }
 
+    // Cleanse assigned fields: if a field is assigned to a recipient who hasn't signed, value must be empty
+    const sanitizedFields = fields.map((f) => {
+      const isAssigned = Boolean(f.signerOrder || f.signerEmail || f.signerId);
+      const targetRec = recipients.find(
+        (r) => (f.signerOrder && r.signingOrder === f.signerOrder) || (f.signerEmail && r.email.toLowerCase() === f.signerEmail.toLowerCase())
+      );
+      if (isAssigned && (!targetRec || targetRec.status !== 'signed')) {
+        return { ...f, value: '' };
+      }
+      return f;
+    });
+
     return {
       ...doc,
       filePath: blobUrl,
-      fields,
+      fields: sanitizedFields,
       recipients,
     };
   },

@@ -16,6 +16,7 @@ import {
   Users,
   Lock,
   ShieldCheck,
+  FileSignature,
 } from 'lucide-react';
 import { SignatureField, FieldType, SavedSignature, Recipient } from '../types';
 import { getDefaultSignature, getSavedSignatures } from '../lib/storage';
@@ -178,13 +179,8 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
   }, [pdfDoc, currentPage, scale]);
 
   const addField = (fieldType: FieldType) => {
-    const defaultSig = getDefaultSignature();
     const nowStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
     let initialValue = '';
-    if (fieldType === 'signature' && defaultSig) {
-      handleSelectSavedSignature(defaultSig.dataUrl);
-      return;
-    }
     if (fieldType === 'date') initialValue = nowStr;
     if (fieldType === 'name') initialValue = 'Your Name';
     if (fieldType === 'text') initialValue = 'Text';
@@ -204,7 +200,6 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
     };
     setFields((prev) => [...prev, newField]);
     setSelectedFieldId(newField.id);
-    if (fieldType === 'signature' && !defaultSig) onOpenSignatureModal(newField.id);
   };
 
   const isFieldLocked = (field: SignatureField) => {
@@ -411,7 +406,9 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
       >
         {/* Field type tools */}
         <div className="flex items-center gap-1.5 shrink-0 overflow-visible">
-          {/* + Sig Dropdown Menu */}
+          {toolBtn('+ Signature Field', <PenTool style={{ height: 13, width: 13 }} />, () => addField('signature'))}
+
+          {/* Stamp My Sig Dropdown Menu */}
           <div className="relative z-50 overflow-visible" ref={sigDropdownRef}>
             <button
               onClick={() => {
@@ -424,12 +421,13 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
                 color: isSigDropdownOpen ? '#F3F4F1' : 'var(--moss)',
                 border: '1px solid rgba(93,112,82,0.18)',
               }}
-              aria-label="Add signature"
+              aria-label="Stamp saved signature"
               aria-haspopup="true"
               aria-expanded={isSigDropdownOpen}
+              title="Stamp your saved signature directly"
             >
-              <PenTool style={{ height: 13, width: 13 }} />
-              <span>+ Sig</span>
+              <FileSignature style={{ height: 13, width: 13 }} />
+              <span>Stamp My Sig</span>
               <ChevronDown
                 style={{
                   height: 11,
@@ -823,6 +821,8 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
                                           signerName: targetRec?.name,
                                           signerEmail: targetRec?.email,
                                           signerId: targetRec?.id,
+                                          // Clear value if assigning to a recipient so owner's draft signature doesn't get assigned to them
+                                          value: order !== 0 && !isFieldLocked(f) ? '' : f.value,
                                         }
                                       : f
                                   )
