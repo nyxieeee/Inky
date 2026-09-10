@@ -186,6 +186,13 @@ export function App() {
     }
   }, [isPublicRoute]);
 
+  // Auto-redirect to home if authenticated user is on /login
+  useEffect(() => {
+    if (user && currentPath === '/login') {
+      navigateTo('/');
+    }
+  }, [user, currentPath]);
+
   // Load pending signing requests whenever user email is known
   useEffect(() => {
     if (user?.email && !isPublicRoute) {
@@ -295,13 +302,6 @@ export function App() {
       </div>
     );
   }
-
-  // Auto-redirect to home if authenticated user is on /login
-  useEffect(() => {
-    if (user && currentPath === '/login') {
-      navigateTo('/');
-    }
-  }, [user, currentPath]);
 
   // Show login page by default when running website unauthenticated
   // Note: Guest mode is ONLY permitted on localhost for local development with Antigravity
