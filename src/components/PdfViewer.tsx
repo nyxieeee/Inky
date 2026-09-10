@@ -14,12 +14,15 @@ import {
   ChevronDown,
   PlusCircle,
   Users,
+  Lock,
+  ShieldCheck,
 } from 'lucide-react';
 import { SignatureField, FieldType, SavedSignature, Recipient } from '../types';
 import { getDefaultSignature, getSavedSignatures } from '../lib/storage';
 import { deliveryService } from '../services/deliveryService';
 import { Dropdown } from './ui/Dropdown';
 import { useDocumentStore } from '../store/useDocumentStore';
+import { useToastStore } from '../store/useToastStore';
 
 export const getSignerColor = (order?: number) => {
   if (order === 1) return '#C18C5D'; // Terracotta
@@ -204,8 +207,17 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
     if (fieldType === 'signature' && !defaultSig) onOpenSignatureModal(newField.id);
   };
 
+  const isFieldLocked = (field: SignatureField) => {
+    return Boolean(field.value && (field.signerOrder || field.signerEmail || field.signerName));
+  };
+
   const removeField = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
+    const field = fields.find((f) => f.id === id);
+    if (field && isFieldLocked(field)) {
+      useToastStore.getState().showToast('Cannot delete a signature that has already been signed by a recipient', 'warning');
+      return;
+    }
     setFields((prev) => prev.filter((f) => f.id !== id));
     if (selectedFieldId === id) setSelectedFieldId(null);
   };
@@ -213,11 +225,13 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
   const handleMouseDown = (fieldId: string, e: React.MouseEvent) => {
     e.stopPropagation();
     setSelectedFieldId(fieldId);
+    
+    const field = fields.find((f) => f.id === fieldId);
+    if (!field || isFieldLocked(field)) return;
+
     setIsDragging(true);
     if (!containerRef.current) return;
     const rect  = containerRef.current.getBoundingClientRect();
-    const field = fields.find((f) => f.id === fieldId);
-    if (!field) return;
     const clickX = e.clientX - rect.left;
     const clickY = e.clientY - rect.top;
     const fieldPixelX = (field.x / 100) * rect.width;
@@ -230,10 +244,11 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
 
   const handleResizeMouseDown = (fieldId: string, e: React.MouseEvent) => {
     e.stopPropagation();
+    const field = fields.find((f) => f.id === fieldId);
+    if (!field || isFieldLocked(field)) return;
+
     setSelectedFieldId(fieldId);
     setIsResizing(true);
-    const field = fields.find((f) => f.id === fieldId);
-    if (!field) return;
     setResizeStart({
       x: e.clientX,
       y: e.clientY,
@@ -619,14 +634,15 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
               const isSelected = selectedFieldId === field.id;
               const isHovered  = hoveredFieldId === field.id;
               const hasValue   = Boolean(field.value);
+              const locked     = isFieldLocked(field);
 
               let borderStyle = '2px dashed transparent';
               if (isSelected) {
-                borderStyle = `2px solid ${fieldSignerColor}`;
+                borderStyle = locked ? '2px solid var(--moss)' : `2px solid ${fieldSignerColor}`;
               } else if (!hasValue) {
                 borderStyle = `2px dashed ${fieldSignerColor}99`;
               } else if (isHovered) {
-                borderStyle = `2px dashed ${fieldSignerColor}80`;
+                borderStyle = locked ? '1.5px dashed var(--moss)' : `2px dashed ${fieldSignerColor}80`;
               }
 
               return (
@@ -647,12 +663,12 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
                   width:    `${field.width}%`,
                   height:   `${field.height}%`,
                   position: 'absolute',
-                  cursor:   'move',
+                  cursor:   locked ? 'default' : 'move',
                   zIndex:   isSelected ? 20 : 10,
                   border:   borderStyle,
                   borderRadius: 10,
                   background: isSelected
-                    ? `${fieldSignerColor}0c`
+                    ? (locked ? 'rgba(93, 112, 82, 0.08)' : `${fieldSignerColor}0c`)
                     : (!hasValue ? (field.signerOrder ? `${fieldSignerColor}08` : 'rgba(93,112,82,0.04)') : 'transparent'),
                   display: 'flex',
                   alignItems: 'center',
@@ -665,12 +681,13 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
                 {/* Signer Tag Badge */}
                 {field.signerOrder && (
                   <span
-                    className={`absolute -top-2.5 left-2 px-2 py-0.5 rounded-full text-[9px] font-bold text-white shadow-xs z-30 pointer-events-none truncate max-w-[120px] transition-opacity duration-150 ${
+                    className={`absolute -top-2.5 left-2 px-2 py-0.5 rounded-full text-[9px] font-bold text-white shadow-xs z-30 pointer-events-none truncate max-w-[150px] flex items-center gap-1 transition-opacity duration-150 ${
                       isSelected || !hasValue ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
                     }`}
-                    style={{ background: fieldSignerColor }}
+                    style={{ background: locked ? 'var(--moss)' : fieldSignerColor }}
                   >
-                    {field.signerName ? `${field.signerOrder}: ${field.signerName}` : `Signer ${field.signerOrder}`}
+                    {locked && <Lock style={{ height: 9, width: 9 }} />}
+                    <span>{field.signerName ? `${field.signerName}${locked ? ' (Signed)' : ''}` : `Signer ${field.signerOrder}`}</span>
                   </span>
                 )}
                 {field.value ? (
@@ -680,7 +697,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
                       alt="Signature"
                       className="h-full w-full object-contain pointer-events-none select-none"
                     />
-                  ) : isSelected ? (
+                  ) : isSelected && !locked ? (
                     <input
                       type="text"
                       ref={(el) => {
@@ -746,90 +763,105 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
                       field.y < 12 ? 'top-[calc(100%+8px)]' : 'bottom-[calc(100%+8px)]'
                     } ${field.x > 35 ? 'right-0' : 'left-0'}`}
                     style={{
-                      background: 'rgba(254, 254, 250, 0.96)',
+                      background: locked ? 'rgba(240, 245, 238, 0.98)' : 'rgba(254, 254, 250, 0.96)',
                       backdropFilter: 'blur(16px)',
-                      border: '1px solid var(--border)',
+                      border: locked ? '1px solid var(--moss)' : '1px solid var(--border)',
                       boxShadow: '0 8px 24px -4px rgba(44, 44, 36, 0.20), 0 2px 6px rgba(44, 44, 36, 0.08)',
                     }}
                   >
-                    {/* Font selector for text/date fields */}
-                    {(field.fieldType === 'text' || field.fieldType === 'date' || field.fieldType === 'name') && (
-                      <div className="flex items-center gap-1 pl-1">
-                        <span className="text-[10px] font-bold" style={{ color: 'var(--fg-muted)' }}>Font:</span>
-                        <div className="w-28">
-                          <Dropdown
-                            value={field.fontFamily || 'Inter'}
-                            onChange={(val) => {
-                              const font = String(val);
-                              setFields((prev) =>
-                                prev.map((f) => (f.id === field.id ? { ...f, fontFamily: font } : f))
-                              );
-                            }}
-                            options={TEXT_FONT_OPTIONS}
-                            buttonClassName="!h-7 !py-0 px-2 text-[11px] bg-white/90"
-                            menuClassName="min-w-[170px]"
-                          />
-                        </div>
+                    {locked ? (
+                      <div className="flex items-center gap-1.5 px-3 py-1 text-xs font-semibold" style={{ color: 'var(--moss)' }}>
+                        <ShieldCheck style={{ height: 13, width: 13 }} />
+                        <span>Locked Signature</span>
+                        <span className="text-[10px] opacity-75 font-normal">
+                          · {field.signerName || 'Recipient'} ({field.signerEmail || `Signer ${field.signerOrder}`})
+                        </span>
+                        <Lock style={{ height: 11, width: 11, marginLeft: 2 }} />
                       </div>
-                    )}
+                    ) : (
+                      <>
+                        {/* Font selector for text/date fields */}
+                        {(field.fieldType === 'text' || field.fieldType === 'date' || field.fieldType === 'name') && (
+                          <div className="flex items-center gap-1 pl-1">
+                            <span className="text-[10px] font-bold" style={{ color: 'var(--fg-muted)' }}>Font:</span>
+                            <div className="w-28">
+                              <Dropdown
+                                value={field.fontFamily || 'Inter'}
+                                onChange={(val) => {
+                                  const font = String(val);
+                                  setFields((prev) =>
+                                    prev.map((f) => (f.id === field.id ? { ...f, fontFamily: font } : f))
+                                  );
+                                }}
+                                options={TEXT_FONT_OPTIONS}
+                                buttonClassName="!h-7 !py-0 px-2 text-[11px] bg-white/90"
+                                menuClassName="min-w-[170px]"
+                              />
+                            </div>
+                          </div>
+                        )}
 
-                    {/* Signer assignment selector */}
-                    <div className="flex items-center gap-1 pl-1">
-                      <Users style={{ height: 11, width: 11, color: 'var(--fg-muted)' }} />
-                      <div className="w-32 sm:w-36">
-                        <Dropdown
-                          value={String(field.signerOrder || 0)}
-                          onChange={(val) => {
-                            if (val === '__add__') {
-                              onSendClick();
-                              return;
-                            }
-                            const order = Number(val);
-                            const targetRec = recipients.find((r) => r.signingOrder === order);
-                            setFields((prev) =>
-                              prev.map((f) =>
-                                f.id === field.id
-                                  ? {
-                                      ...f,
-                                      signerOrder: order === 0 ? undefined : order,
-                                      signerName: targetRec?.name,
-                                      signerEmail: targetRec?.email,
-                                      signerId: targetRec?.id,
-                                    }
-                                  : f
-                              )
-                            );
-                          }}
-                          options={signerOptions}
-                          buttonClassName="!h-7 !py-0 px-2 text-[11px] bg-white/90"
-                          align={field.x > 35 ? 'right' : 'left'}
-                          menuClassName="min-w-[180px]"
-                        />
-                      </div>
-                    </div>
+                        {/* Signer assignment selector */}
+                        <div className="flex items-center gap-1 pl-1">
+                          <Users style={{ height: 11, width: 11, color: 'var(--fg-muted)' }} />
+                          <div className="w-32 sm:w-36">
+                            <Dropdown
+                              value={String(field.signerOrder || 0)}
+                              onChange={(val) => {
+                                if (val === '__add__') {
+                                  onSendClick();
+                                  return;
+                                }
+                                const order = Number(val);
+                                const targetRec = recipients.find((r) => r.signingOrder === order);
+                                setFields((prev) =>
+                                  prev.map((f) =>
+                                    f.id === field.id
+                                      ? {
+                                          ...f,
+                                          signerOrder: order === 0 ? undefined : order,
+                                          signerName: targetRec?.name,
+                                          signerEmail: targetRec?.email,
+                                          signerId: targetRec?.id,
+                                        }
+                                      : f
+                                  )
+                                );
+                              }}
+                              options={signerOptions}
+                              buttonClassName="!h-7 !py-0 px-2 text-[11px] bg-white/90"
+                              align={field.x > 35 ? 'right' : 'left'}
+                              menuClassName="min-w-[180px]"
+                            />
+                          </div>
+                        </div>
+                      </>
+                    )}
                   </div>
                 )}
 
-                {/* Delete handle */}
-                <button
-                  onClick={(e) => removeField(field.id, e)}
-                  onMouseDown={(e) => e.stopPropagation()}
-                  className={`absolute -top-2.5 -right-2.5 h-6 w-6 rounded-full flex items-center justify-center transition-all duration-200 z-30 cursor-pointer ${
-                    isSelected ? 'opacity-100 scale-100' : 'opacity-0 group-hover:opacity-100'
-                  }`}
-                  style={{
-                    background: '#A85448',
-                    color: '#fff',
-                    boxShadow: '0 2px 8px rgba(168,84,72,0.40)',
-                  }}
-                  title="Remove field"
-                  aria-label="Remove field"
-                >
-                  <Trash2 style={{ height: 11, width: 11 }} />
-                </button>
+                {/* Delete handle (only for unlocked fields) */}
+                {!locked && (
+                  <button
+                    onClick={(e) => removeField(field.id, e)}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    className={`absolute -top-2.5 -right-2.5 h-6 w-6 rounded-full flex items-center justify-center transition-all duration-200 z-30 cursor-pointer ${
+                      isSelected ? 'opacity-100 scale-100' : 'opacity-0 group-hover:opacity-100'
+                    }`}
+                    style={{
+                      background: '#A85448',
+                      color: '#fff',
+                      boxShadow: '0 2px 8px rgba(168,84,72,0.40)',
+                    }}
+                    title="Remove field"
+                    aria-label="Remove field"
+                  >
+                    <Trash2 style={{ height: 11, width: 11 }} />
+                  </button>
+                )}
 
-                {/* Corner Resize handle */}
-                {isSelected && (
+                {/* Corner Resize handle (only for unlocked fields) */}
+                {!locked && isSelected && (
                   <div
                     onMouseDown={(e) => handleResizeMouseDown(field.id, e)}
                     className="absolute -bottom-2 -right-2 w-4 h-4 rounded-full flex items-center justify-center cursor-se-resize z-30 transition-transform hover:scale-125"
