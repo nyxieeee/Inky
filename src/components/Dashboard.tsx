@@ -39,7 +39,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     const matchSearch = d.title.toLowerCase().includes(q) || d.originalFileName.toLowerCase().includes(q);
     if (!matchSearch) return false;
     if (activeFilter === 'to_sign')   return d.status === 'draft' || (d.status === 'pending' && d.source === 'inbound');
-    if (activeFilter === 'pending')   return d.status === 'pending' && d.source !== 'inbound';
+    if (activeFilter === 'pending')   return (d.status === 'pending' || d.status === 'sent') && d.source !== 'inbound';
     if (activeFilter === 'completed') return d.status === 'completed';
     return true;
   });
@@ -55,7 +55,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
   const docStatusBadge = (doc: Document) => {
     if (doc.status === 'completed') return <span className="badge-moss">Signed</span>;
-    if (doc.status === 'pending' && doc.source !== 'inbound') return <span className="badge-clay">Awaiting</span>;
+    if ((doc.status === 'pending' || doc.status === 'sent') && doc.source !== 'inbound') return <span className="badge-clay">Sent</span>;
     if (doc.source === 'inbound') return <span className="badge-stone">Inbound</span>;
     return <span className="badge-stone">Draft</span>;
   };
@@ -86,9 +86,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         {/* Filter pills — non-scrollable, responsive pill segment */}
         <div className="flex items-center gap-1 sm:gap-2 w-full sm:w-auto p-1 rounded-full bg-[var(--bg-stone)] sm:bg-transparent no-scrollbar">
           {[
-            { id: 'to_sign',   label: 'To Sign' },
-            { id: 'pending',   label: 'Pending' },
-            { id: 'completed', label: 'Recent'  },
+            { id: 'to_sign',   label: 'Uploaded' },
+            { id: 'pending',   label: 'Sent'     },
+            { id: 'completed', label: 'Recent'   },
           ].map((tab) => (
             <button
               key={tab.id}
