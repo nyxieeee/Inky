@@ -45,6 +45,9 @@ async function ensureCloudSync(docId: string, recipients: Recipient[]): Promise<
     .eq('id', docId)
     .maybeSingle();
 
+  const senderName = userData?.user?.user_metadata?.full_name || userData?.user?.user_metadata?.name || userData?.user?.email || 'Inky';
+  const senderEmail = userData?.user?.email || null;
+
   if (!existingDoc) {
     // Upload PDF to storage first
     const pdfBytes = await storage.getPdfBytes(docId);
@@ -68,13 +71,20 @@ async function ensureCloudSync(docId: string, recipients: Recipient[]): Promise<
         page_count: doc.pageCount || 1,
         status: doc.status || 'draft',
         source: doc.source || 'uploaded',
+        sender_name: senderName,
+        sender_email: senderEmail,
       });
       if (insertErr) {
         console.error('Failed to insert document to Supabase:', insertErr);
       }
     }
   } else {
-    // Document exists — ensure PDF is in storage
+    // Document exists — ensure PDF is in storage and update sender info
+    await supabase.from('documents').update({
+      sender_name: senderName,
+      sender_email: senderEmail,
+    }).eq('id', docId);
+
     const { data: docRecord } = await supabase
       .from('documents')
       .select('file_path')
@@ -179,7 +189,15 @@ export const deliveryService = {
 
       if (isSupabaseConfigured() && supabase) {
         try {
-          await supabase.from('documents').update({ status: 'sent', updated_at: doc.updatedAt }).eq('id', docId);
+          const { data: authData } = await supabase.auth.getUser();
+          const sName = authData?.user?.user_metadata?.full_name || authData?.user?.user_metadata?.name || authData?.user?.email || 'Inky';
+          const sEmail = authData?.user?.email || null;
+          await supabase.from('documents').update({
+            status: 'sent',
+            updated_at: doc.updatedAt,
+            sender_name: sName,
+            sender_email: sEmail,
+          }).eq('id', docId);
         } catch (e) {
           console.warn('Supabase document status update notice:', e);
         }
