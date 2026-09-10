@@ -145,4 +145,37 @@ export const signingRequestService = {
       return [];
     }
   },
+
+  /**
+   * Deletes a signing request from the recipient's inbox.
+   */
+  async deleteRequest(id: string, documentId?: string): Promise<void> {
+    if (isSupabaseConfigured() && supabase) {
+      try {
+        const { error } = await supabase.from('document_recipients').delete().eq('id', id);
+        if (error) {
+          console.warn('Supabase recipient delete error:', error);
+        }
+      } catch (err) {
+        console.warn('Error deleting signing request from Supabase:', err);
+      }
+    }
+
+    try {
+      if (documentId) {
+        const recipients = storage.getLocalDocumentRecipients(documentId).filter((r) => r.id !== id);
+        storage.saveLocalDocumentRecipients(documentId, recipients);
+      } else {
+        const docs = storage.getLocalDocuments();
+        for (const doc of docs) {
+          const recipients = storage.getLocalDocumentRecipients(doc.id);
+          if (recipients.some((r) => r.id === id)) {
+            storage.saveLocalDocumentRecipients(doc.id, recipients.filter((r) => r.id !== id));
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Error deleting local signing request:', e);
+    }
+  },
 };

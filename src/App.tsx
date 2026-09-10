@@ -80,6 +80,8 @@ export function App() {
   const [isMultiSignerOpen, setIsMultiSignerOpen] = useState(false);
   const [isShareInboxOpen, setIsShareInboxOpen] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [confirmDeleteReq, setConfirmDeleteReq] = useState<PendingSigningRequest | null>(null);
+  const [confirmDeleteNotif, setConfirmDeleteNotif] = useState<SignedNotification | null>(null);
 
   // Saved Signatures renaming state
   const [editingSigId, setEditingSigId] = useState<string | null>(null);
@@ -270,6 +272,26 @@ export function App() {
   const handleMarkAllNotifRead = async () => {
     await notificationService.markAllRead();
     setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+  };
+
+  const handleDeleteSigningRequest = async (req: PendingSigningRequest) => {
+    try {
+      await signingRequestService.deleteRequest(req.id, req.documentId);
+      setPendingRequests((prev) => prev.filter((r) => r.id !== req.id));
+      showToast('Signing request removed from inbox', 'info');
+    } catch {
+      showToast('Failed to remove request', 'error');
+    }
+  };
+
+  const handleDeleteNotification = async (notif: SignedNotification) => {
+    try {
+      await notificationService.deleteNotification(notif.id);
+      setNotifications((prev) => prev.filter((n) => n.id !== notif.id));
+      showToast('Signed document notification removed', 'info');
+    } catch {
+      showToast('Failed to remove notification', 'error');
+    }
   };
 
   if (isInboxRoute && inboundToken) {
@@ -733,16 +755,30 @@ export function App() {
                         </div>
                       </div>
 
-                      <button
-                        onClick={() => navigateTo(`/sign/${req.token}`)}
-                        className="btn-primary btn-sm shrink-0 flex items-center gap-1.5"
-                        style={{
-                          background: req.status === 'pending' ? 'var(--terracotta)' : 'var(--moss)',
-                        }}
-                      >
-                        <span>{req.status === 'pending' ? 'Sign Now' : 'View'}</span>
-                        <ChevronRight style={{ height: 13, width: 13 }} />
-                      </button>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          onClick={() => navigateTo(`/sign/${req.token}`)}
+                          className="btn-primary btn-sm flex items-center gap-1.5"
+                          style={{
+                            background: req.status === 'pending' ? 'var(--terracotta)' : 'var(--moss)',
+                          }}
+                        >
+                          <span>{req.status === 'pending' ? 'Sign Now' : 'View'}</span>
+                          <ChevronRight style={{ height: 13, width: 13 }} />
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setConfirmDeleteReq(req);
+                          }}
+                          className="p-2 rounded-xl transition-all duration-200 hover:scale-110 cursor-pointer"
+                          style={{ color: 'var(--fg-muted)' }}
+                          aria-label="Delete signing request"
+                          title="Delete from inbox"
+                        >
+                          <Trash2 style={{ height: 16, width: 16 }} />
+                        </button>
+                      </div>
                     </div>
                   ))
                 )}
@@ -847,14 +883,28 @@ export function App() {
                           </p>
                         </div>
                       </div>
-                      <button
-                        onClick={() => handleMarkNotifRead(notif.id, notif.documentId)}
-                        className="btn-primary btn-sm shrink-0 flex items-center gap-1.5"
-                        title="Open document"
-                      >
-                        <span>View</span>
-                        <ChevronRight style={{ height: 13, width: 13 }} />
-                      </button>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          onClick={() => handleMarkNotifRead(notif.id, notif.documentId)}
+                          className="btn-primary btn-sm flex items-center gap-1.5"
+                          title="Open document"
+                        >
+                          <span>View</span>
+                          <ChevronRight style={{ height: 13, width: 13 }} />
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setConfirmDeleteNotif(notif);
+                          }}
+                          className="p-2 rounded-xl transition-all duration-200 hover:scale-110 cursor-pointer"
+                          style={{ color: 'var(--fg-muted)' }}
+                          aria-label="Delete notification"
+                          title="Delete notification"
+                        >
+                          <Trash2 style={{ height: 16, width: 16 }} />
+                        </button>
+                      </div>
                     </div>
                   ))
                 )}
@@ -983,6 +1033,36 @@ export function App() {
           }
         }}
         onCancel={() => setConfirmDeleteId(null)}
+      />
+
+      <ConfirmModal
+        isOpen={Boolean(confirmDeleteReq)}
+        title="Remove Signing Request"
+        message={`Are you sure you want to remove "${confirmDeleteReq?.documentTitle || 'this document'}" from your inbox?`}
+        confirmLabel="Remove"
+        isDestructive={true}
+        onConfirm={() => {
+          if (confirmDeleteReq) {
+            handleDeleteSigningRequest(confirmDeleteReq);
+            setConfirmDeleteReq(null);
+          }
+        }}
+        onCancel={() => setConfirmDeleteReq(null)}
+      />
+
+      <ConfirmModal
+        isOpen={Boolean(confirmDeleteNotif)}
+        title="Remove Notification"
+        message={`Are you sure you want to delete the notification for "${confirmDeleteNotif?.docTitle || 'this document'}"?`}
+        confirmLabel="Delete"
+        isDestructive={true}
+        onConfirm={() => {
+          if (confirmDeleteNotif) {
+            handleDeleteNotification(confirmDeleteNotif);
+            setConfirmDeleteNotif(null);
+          }
+        }}
+        onCancel={() => setConfirmDeleteNotif(null)}
       />
 
       <AuthModal

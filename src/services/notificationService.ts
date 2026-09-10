@@ -101,4 +101,16 @@ export const notificationService = {
       console.warn('Failed to mark all notifications as read:', err);
     }
   },
+
+  /**
+   * Permanently deletes a signed notification.
+   */
+  async deleteNotification(id: string): Promise<void> {
+    if (!isSupabaseConfigured() || !supabase) return;
+    try {
+      await supabase.from('signed_notifications').delete().eq('id', id);
+    } catch (err) {
+      console.warn('Failed to delete notification:', err);
+    }
+  },
 };
