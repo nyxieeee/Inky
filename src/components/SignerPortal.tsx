@@ -19,6 +19,7 @@ import {
   Move,
   Plus,
   Trash2,
+  Home,
 } from 'lucide-react';
 import { deliveryService } from '../services/deliveryService';
 import { Recipient, Document, SignatureField } from '../types';
@@ -426,11 +427,26 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
 
   const { recipient, document: doc } = context;
 
+  const handleGoHome = () => {
+    if (onBack) {
+      onBack();
+    } else {
+      window.location.href = '/';
+    }
+  };
+
   // Check if this recipient already signed previously
   if (recipient.status === 'signed' && !submittedResult) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-4 bg-[var(--bg)]">
-        <div className="card-organic max-w-md w-full p-8 text-center space-y-5 rounded-[2.5rem] animate-fadeIn">
+      <div
+        onClick={handleGoHome}
+        className="min-h-screen flex items-center justify-center p-4 bg-[var(--bg)] cursor-pointer"
+        title="Click anywhere to return to home page"
+      >
+        <div
+          onClick={(e) => e.stopPropagation()}
+          className="card-organic max-w-md w-full p-8 text-center space-y-5 rounded-[2.5rem] animate-fadeIn cursor-default shadow-xl border border-[var(--border-light)]"
+        >
           <div className="h-16 w-16 rounded-[1.5rem] flex items-center justify-center mx-auto bg-[var(--moss-dim)]">
             <CheckCircle2 className="h-8 w-8 text-[var(--moss)]" />
           </div>
@@ -458,6 +474,19 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
               </div>
             )}
           </div>
+          <div className="pt-2">
+            <button
+              onClick={handleGoHome}
+              className="btn-primary w-full justify-center text-xs py-3 flex items-center gap-2 shadow-sm"
+              style={{ background: 'var(--moss)' }}
+            >
+              <Home className="h-4 w-4" />
+              <span>Back to Home Page</span>
+            </button>
+          </div>
+          <p className="text-[10px] text-[var(--fg-muted)] opacity-70">
+            Click anywhere outside or the button above to go to home page
+          </p>
         </div>
       </div>
     );
@@ -466,8 +495,15 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
   // Check if successfully submitted just now
   if (submittedResult) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-4 bg-[var(--bg)] font-sans">
-        <div className="card-organic max-w-lg w-full p-8 text-center space-y-6 rounded-[2.5rem] animate-fadeIn">
+      <div
+        onClick={handleGoHome}
+        className="min-h-screen flex items-center justify-center p-4 bg-[var(--bg)] font-sans cursor-pointer"
+        title="Click anywhere to return to home page"
+      >
+        <div
+          onClick={(e) => e.stopPropagation()}
+          className="card-organic max-w-lg w-full p-8 text-center space-y-6 rounded-[2.5rem] animate-fadeIn cursor-default shadow-2xl border border-[var(--border-light)]"
+        >
           <div className="h-18 w-18 rounded-[1.75rem] flex items-center justify-center mx-auto bg-[var(--moss-dim)]">
             <CheckCircle2 className="h-10 w-10 text-[var(--moss)]" />
           </div>
@@ -492,22 +528,38 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
             </p>
           </div>
 
-          {context.pdfBlob && (
+          <div className="flex flex-col sm:flex-row gap-3 pt-1">
+            {context.pdfBlob && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  const url = URL.createObjectURL(context.pdfBlob!);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `${doc.title}.pdf`;
+                  a.click();
+                  URL.revokeObjectURL(url);
+                }}
+                className="btn-outline flex-1 justify-center text-xs py-3 flex items-center gap-2"
+              >
+                <Download className="h-4 w-4" />
+                <span>Download Document</span>
+              </button>
+            )}
+
             <button
-              onClick={() => {
-                const url = URL.createObjectURL(context.pdfBlob!);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `${doc.title}.pdf`;
-                a.click();
-                URL.revokeObjectURL(url);
-              }}
-              className="btn-outline w-full justify-center text-xs py-2.5"
+              onClick={handleGoHome}
+              className="btn-primary flex-1 justify-center text-xs py-3 flex items-center gap-2 shadow-sm"
+              style={{ background: 'var(--moss)' }}
             >
-              <Download className="h-3.5 w-3.5" />
-              <span>Download Document</span>
+              <Home className="h-4 w-4" />
+              <span>Back to Home</span>
             </button>
-          )}
+          </div>
+
+          <p className="text-[11px] text-[var(--fg-muted)] opacity-70">
+            Click anywhere outside or the button above to return to the home page
+          </p>
         </div>
       </div>
     );
