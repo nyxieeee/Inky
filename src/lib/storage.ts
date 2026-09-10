@@ -294,3 +294,114 @@ export function updateSavedSignatureLabel(id: string, label: string): SavedSigna
   }
   return signatures;
 }
+
+// ── Dismissed Signing Requests & Notifications Store ───────────────────────
+const DISMISSED_SIGNING_REQUESTS_KEY = 'inky_dismissed_signing_requests';
+const DISMISSED_NOTIFICATIONS_KEY = 'inky_dismissed_notifications';
+
+export function getDismissedSigningRequestIds(userEmail?: string): string[] {
+  try {
+    const globalRaw = localStorage.getItem(DISMISSED_SIGNING_REQUESTS_KEY);
+    const globalList: string[] = globalRaw ? JSON.parse(globalRaw) : [];
+
+    if (userEmail) {
+      const clean = userEmail.trim().toLowerCase();
+      const userRaw = localStorage.getItem(`${DISMISSED_SIGNING_REQUESTS_KEY}_${clean}`);
+      const userList: string[] = userRaw ? JSON.parse(userRaw) : [];
+      return Array.from(new Set([...globalList, ...userList]));
+    }
+    return globalList;
+  } catch {
+    return [];
+  }
+}
+
+export function addDismissedSigningRequestId(
+  id: string,
+  userEmail?: string,
+  token?: string,
+  documentId?: string
+): void {
+  try {
+    const toAdd: string[] = [];
+    if (id) toAdd.push(id);
+    if (token) toAdd.push(token);
+    if (documentId) toAdd.push(documentId);
+
+    // 1. Global list
+    const globalList = getDismissedSigningRequestIds();
+    const updatedGlobal = Array.from(new Set([...globalList, ...toAdd]));
+    localStorage.setItem(DISMISSED_SIGNING_REQUESTS_KEY, JSON.stringify(updatedGlobal));
+
+    // 2. User-scoped list
+    if (userEmail) {
+      const clean = userEmail.trim().toLowerCase();
+      const userKey = `${DISMISSED_SIGNING_REQUESTS_KEY}_${clean}`;
+      const raw = localStorage.getItem(userKey);
+      const userList: string[] = raw ? JSON.parse(raw) : [];
+      const updatedUser = Array.from(new Set([...userList, ...toAdd]));
+      localStorage.setItem(userKey, JSON.stringify(updatedUser));
+    }
+  } catch (e) {
+    console.warn('Failed to record dismissed signing request id:', e);
+  }
+}
+
+export function purgeLocalRecipient(id: string, token?: string, documentId?: string): void {
+  try {
+    if (documentId) {
+      const recs = getLocalDocumentRecipients(documentId).filter(
+        (r) => r.id !== id && (!token || r.token !== token)
+      );
+      saveLocalDocumentRecipients(documentId, recs);
+    }
+
+    // Scan all inky_recipients_* keys in localStorage
+    const recipientKeys: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith('inky_recipients_')) {
+        recipientKeys.push(k);
+      }
+    }
+
+    for (const key of recipientKeys) {
+      const raw = localStorage.getItem(key);
+      if (raw && (raw.includes(id) || (token && raw.includes(token)))) {
+        try {
+          const list = JSON.parse(raw);
+          if (Array.isArray(list)) {
+            const filtered = list.filter(
+              (r: any) => r.id !== id && (!token || r.token !== token)
+            );
+            localStorage.setItem(key, JSON.stringify(filtered));
+          }
+        } catch {
+          // ignore
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('Error purging local recipient across stores:', e);
+  }
+}
+
+export function getDismissedNotificationIds(): string[] {
+  try {
+    const raw = localStorage.getItem(DISMISSED_NOTIFICATIONS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function addDismissedNotificationId(id: string): void {
+  try {
+    const current = getDismissedNotificationIds();
+    const updated = Array.from(new Set([...current, id]));
+    localStorage.setItem(DISMISSED_NOTIFICATIONS_KEY, JSON.stringify(updated));
+  } catch (e) {
+    console.warn('Failed to record dismissed notification id:', e);
+  }
+}
+

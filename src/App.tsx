@@ -277,8 +277,8 @@ export function App() {
 
   const handleDeleteSigningRequest = async (req: PendingSigningRequest) => {
     try {
-      await signingRequestService.deleteRequest(req.id, req.documentId);
-      setPendingRequests((prev) => prev.filter((r) => r.id !== req.id));
+      await signingRequestService.deleteRequest(req.id, req.documentId, user?.email || undefined, req.token);
+      setPendingRequests((prev) => prev.filter((r) => r.id !== req.id && (!req.token || r.token !== req.token)));
       showToast('Signing request removed from inbox', 'info');
     } catch {
       showToast('Failed to remove request', 'error');

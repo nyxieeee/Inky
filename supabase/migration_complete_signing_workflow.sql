@@ -103,6 +103,21 @@ CREATE POLICY "Signers and recipients can update recipient record"
     )
   );
 
+DROP POLICY IF EXISTS "Recipients and owners can delete recipient record" ON public.document_recipients;
+CREATE POLICY "Recipients and owners can delete recipient record"
+  ON public.document_recipients
+  FOR DELETE
+  TO public
+  USING (
+    lower(email) = lower(coalesce(auth.jwt()->>'email', '')) OR
+    lower(email) = lower(coalesce((SELECT email FROM auth.users WHERE id = auth.uid()), '')) OR
+    token IS NOT NULL OR
+    EXISTS (
+      SELECT 1 FROM public.documents d
+      WHERE d.id = document_recipients.document_id AND d.user_id = auth.uid()
+    )
+  );
+
 -- ── 6. RLS for documents (Accessible to Owner & Any Recipient / Signer) ───────
 ALTER TABLE public.documents ENABLE ROW LEVEL SECURITY;
 

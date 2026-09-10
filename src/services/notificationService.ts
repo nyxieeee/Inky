@@ -1,6 +1,7 @@
 // Inky Notification Service — Sender's Inbox for Signed Documents
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { uid } from '../utils';
+import * as storage from '../lib/storage';
 
 export interface SignedNotification {
   id: string;
@@ -50,9 +51,10 @@ export const notificationService = {
 
   /**
    * Lists all signed_notifications for the currently authenticated user,
-   * newest first.
+   * newest first. Filters out any permanently dismissed/deleted notifications.
    */
   async listNotifications(): Promise<SignedNotification[]> {
+    const dismissedIds = new Set(storage.getDismissedNotificationIds());
     if (!isSupabaseConfigured() || !supabase) return [];
     try {
       const { data, error } = await supabase
@@ -60,18 +62,20 @@ export const notificationService = {
         .select('*')
         .order('created_at', { ascending: false });
       if (error || !data) return [];
-      return data.map((d: any) => ({
-        id: d.id,
-        documentId: d.document_id,
-        recipientId: d.recipient_id,
-        ownerUserId: d.owner_user_id,
-        signerName: d.signer_name,
-        signerEmail: d.signer_email,
-        docTitle: d.doc_title,
-        allComplete: d.all_complete,
-        read: d.read,
-        createdAt: d.created_at,
-      }));
+      return data
+        .filter((d: any) => !dismissedIds.has(d.id))
+        .map((d: any) => ({
+          id: d.id,
+          documentId: d.document_id,
+          recipientId: d.recipient_id,
+          ownerUserId: d.owner_user_id,
+          signerName: d.signer_name,
+          signerEmail: d.signer_email,
+          docTitle: d.doc_title,
+          allComplete: d.all_complete,
+          read: d.read,
+          createdAt: d.created_at,
+        }));
     } catch (err) {
       console.warn('Failed to list notifications:', err);
       return [];
@@ -106,6 +110,7 @@ export const notificationService = {
    * Permanently deletes a signed notification.
    */
   async deleteNotification(id: string): Promise<void> {
+    storage.addDismissedNotificationId(id);
     if (!isSupabaseConfigured() || !supabase) return;
     try {
       await supabase.from('signed_notifications').delete().eq('id', id);
