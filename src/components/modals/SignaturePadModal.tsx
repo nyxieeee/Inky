@@ -1,6 +1,6 @@
 import React, { useRef, useState, useEffect } from 'react';
 import SignaturePad from 'signature_pad';
-import { X, PenTool, Type, Upload, Check, RotateCcw, ChevronDown, Minus, Plus } from 'lucide-react';
+import { X, PenTool, Type, Upload, History, Check, RotateCcw, ChevronDown, Minus, Plus } from 'lucide-react';
 import { saveSignature, getSavedSignatures } from '../../lib/storage';
 import { SavedSignature } from '../../types';
 import { trimCanvas, processUploadedSignature, combineSignatureAndName } from '../../utils';
@@ -459,11 +459,11 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
   };
 
   const tabs = [
-    { id: 'draw',   label: 'Draw',   icon: <PenTool style={{ height: 14, width: 14 }} /> },
-    { id: 'type',   label: 'Type',   icon: <Type    style={{ height: 14, width: 14 }} /> },
-    { id: 'upload', label: 'Upload', icon: <Upload  style={{ height: 14, width: 14 }} /> },
+    { id: 'draw',   label: 'Draw',            icon: <PenTool style={{ height: 14, width: 14 }} /> },
+    { id: 'type',   label: 'Type',            icon: <Type    style={{ height: 14, width: 14 }} /> },
+    { id: 'upload', label: 'Upload',          icon: <Upload  style={{ height: 14, width: 14 }} /> },
     ...(savedSigs.length > 0
-      ? [{ id: 'saved', label: `Saved (${savedSigs.length})`, icon: <Check style={{ height: 14, width: 14 }} /> }]
+      ? [{ id: 'saved', label: 'Past Signatures', icon: <History style={{ height: 14, width: 14 }} /> }]
       : []),
   ];
 
@@ -508,7 +508,7 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
 
         {/* Tab Bar — pill segment */}
         <div
-          className="flex gap-1 p-2 mx-4 mt-4 rounded-full"
+          className="flex gap-1 p-1.5 mx-4 mt-4 rounded-full overflow-x-auto no-scrollbar"
           style={{ background: 'var(--bg-stone)' }}
           role="tablist"
         >
@@ -518,7 +518,7 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
               role="tab"
               aria-selected={activeTab === tab.id}
               onClick={() => handleTabChange(tab.id as any)}
-              className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-full text-xs font-bold transition-all duration-200"
+              className="flex-1 flex items-center justify-center gap-1.5 py-2 px-2 sm:px-3 rounded-full text-xs font-bold transition-all duration-200 shrink-0"
               style={{
                 background: activeTab === tab.id ? 'var(--moss)' : 'transparent',
                 color: activeTab === tab.id ? '#F3F4F1' : 'var(--fg-muted)',
@@ -526,7 +526,7 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
               }}
             >
               {tab.icon}
-              <span className="hidden xs:inline">{tab.label}</span>
+              <span className="text-[11px] sm:text-xs font-bold whitespace-nowrap">{tab.label}</span>
             </button>
           ))}
         </div>

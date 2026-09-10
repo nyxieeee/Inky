@@ -22,11 +22,12 @@ import {
   Home,
 } from 'lucide-react';
 import { deliveryService } from '../services/deliveryService';
-import { Recipient, Document, SignatureField } from '../types';
+import { Recipient, Document, SignatureField, SavedSignature } from '../types';
 import { SignaturePadModal } from './modals/SignaturePadModal';
 import { useToastStore } from '../store/useToastStore';
 import { getSignerColor } from './PdfViewer';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { getSavedSignatures, getDefaultSignature } from '../lib/storage';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js`;
 
@@ -55,6 +56,9 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
   // Local field value changes by this signer
   const [fieldValues, setFieldValues] = useState<Record<string, { value: string; fontFamily?: string }>>({});
   const [isSigModalOpen, setIsSigModalOpen] = useState(false);
+  const [recentSignature, setRecentSignature] = useState<SavedSignature | null>(() => {
+    return getDefaultSignature() || getSavedSignatures()[0] || null;
+  });
   const [activeSigFieldId, setActiveSigFieldId] = useState<string | null>(null);
   const [pendingAddCoords, setPendingAddCoords] = useState<{ x: number; y: number } | null>(null);
   const [draggingFieldId, setDraggingFieldId] = useState<string | null>(null);
@@ -605,16 +609,17 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
     setIsSigModalOpen(true);
   };
 
-  const handleSelectSignature = (dataUrl: string) => {
-    if (activeSigFieldId) {
+  const handleSelectSignature = (dataUrl: string, targetFieldId?: string) => {
+    const fieldToFill = targetFieldId || activeSigFieldId;
+    if (fieldToFill) {
       setFieldValues((prev) => ({
         ...prev,
-        [activeSigFieldId]: { value: dataUrl },
+        [fieldToFill]: { value: dataUrl },
       }));
       setFields((prev) =>
-        prev.map((f) => (f.id === activeSigFieldId ? { ...f, value: dataUrl } : f))
+        prev.map((f) => (f.id === fieldToFill ? { ...f, value: dataUrl } : f))
       );
-      setSelectedFieldId(activeSigFieldId);
+      setSelectedFieldId(fieldToFill);
       useToastStore.getState().showToast('Signature placed', 'success');
     } else {
       const newFieldId = `sig_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
@@ -646,6 +651,10 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
       setSelectedFieldId(newFieldId);
       useToastStore.getState().showToast('Signature placed! Drag to position, drag corner to resize.', 'success');
     }
+
+    // Keep recent signature fresh
+    const sigs = getSavedSignatures();
+    setRecentSignature(getDefaultSignature() || sigs[0] || null);
 
     setIsSigModalOpen(false);
     setActiveSigFieldId(null);
@@ -860,15 +869,33 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
             </button>
           </div>
 
-          {/* Quick "Add Signature" Button */}
-          <button
-            onClick={() => handleStartAddSignature()}
-            className="btn-primary text-xs py-1.5 px-3.5 flex items-center gap-1.5 shadow-sm"
-            style={{ background: 'var(--moss)', color: '#F3F4F1' }}
-          >
-            <PenTool className="h-3.5 w-3.5" />
-            <span>+ Add Signature</span>
-          </button>
+          {/* Quick "Add Signature" Button & Recent Signature Preview */}
+          <div className="flex items-center gap-1.5">
+            {recentSignature && (
+              <button
+                type="button"
+                onClick={() => handleSelectSignature(recentSignature.dataUrl)}
+                className="h-8 px-2.5 rounded-full border border-[var(--border-light)] bg-white/90 dark:bg-black/40 hover:bg-[var(--moss-dim)] transition-all duration-200 hover:scale-105 flex items-center gap-1.5 shadow-xs shrink-0 cursor-pointer"
+                title={`Quick sign with recent signature: ${recentSignature.label || 'Signature'}`}
+                aria-label="Quick sign with recent signature"
+              >
+                <img
+                  src={recentSignature.dataUrl}
+                  alt={recentSignature.label || 'Recent signature'}
+                  className="h-5 w-auto max-w-[65px] object-contain select-none"
+                />
+              </button>
+            )}
+
+            <button
+              onClick={() => handleStartAddSignature()}
+              className="btn-primary text-xs py-1.5 px-3.5 flex items-center gap-1.5 shadow-sm"
+              style={{ background: 'var(--moss)', color: '#F3F4F1' }}
+            >
+              <PenTool className="h-3.5 w-3.5" />
+              <span>+ Add Signature</span>
+            </button>
+          </div>
 
           {/* Quick "Add Date" Button */}
           <button
@@ -1139,7 +1166,7 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
       {/* 1. If user has pending required fields */}
       {nextPendingField && (
         <aside className="sticky bottom-4 z-40 px-4 flex justify-center pointer-events-none">
-          <div className="pointer-events-auto max-w-md w-full shadow-2xl rounded-full p-1.5 pl-4 pr-1.5 flex items-center justify-between gap-3 border backdrop-blur-xl animate-slideUp bg-[var(--surface)]/95 border-[var(--border)]">
+          <div className="pointer-events-auto max-w-lg w-full shadow-2xl rounded-full p-1.5 pl-4 pr-1.5 flex items-center justify-between gap-2 sm:gap-3 border backdrop-blur-xl animate-slideUp bg-[var(--surface)]/95 border-[var(--border)]">
             <div className="flex items-center gap-2 text-xs truncate">
               <span className="h-2 w-2 rounded-full bg-[var(--terracotta)] animate-ping shrink-0" />
               <span className="font-bold text-[var(--fg)] truncate">
@@ -1149,23 +1176,46 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
               </span>
             </div>
 
-            <button
-              onClick={() => {
-                if (nextPendingField.pageNumber !== currentPage) {
-                  setCurrentPage(nextPendingField.pageNumber);
-                } else {
-                  handleOpenSigModal(nextPendingField.id);
-                }
-              }}
-              className="py-2 px-4 rounded-full text-xs font-bold text-white flex items-center gap-1.5 transition-all duration-200 hover:scale-105 shadow-md shrink-0"
-              style={{ background: 'var(--terracotta)' }}
-            >
-              <span>
-                {nextPendingField.pageNumber !== currentPage
-                  ? `Go to Page ${nextPendingField.pageNumber} →`
-                  : `Sign Here ✍️`}
-              </span>
-            </button>
+            <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+              {recentSignature && nextPendingField.pageNumber === currentPage && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleSelectSignature(recentSignature.dataUrl, nextPendingField.id);
+                  }}
+                  className="h-9 px-2.5 sm:px-3 rounded-full border border-[var(--moss)]/40 bg-white/90 dark:bg-black/40 hover:bg-[var(--moss-dim)] transition-all duration-200 hover:scale-105 flex items-center gap-1.5 sm:gap-2 shadow-sm shrink-0 group cursor-pointer"
+                  title={`Quick sign with recent signature: ${recentSignature.label || 'Signature'}`}
+                  aria-label="Quick sign with recent signature"
+                >
+                  <img
+                    src={recentSignature.dataUrl}
+                    alt={recentSignature.label || 'Recent signature'}
+                    className="h-5 sm:h-6 w-auto max-w-[65px] sm:max-w-[90px] object-contain select-none"
+                  />
+                  <span className="text-[11px] font-bold text-[var(--moss)] hidden sm:inline group-hover:underline">
+                    Quick Sign
+                  </span>
+                </button>
+              )}
+
+              <button
+                onClick={() => {
+                  if (nextPendingField.pageNumber !== currentPage) {
+                    setCurrentPage(nextPendingField.pageNumber);
+                  } else {
+                    handleOpenSigModal(nextPendingField.id);
+                  }
+                }}
+                className="py-2 px-3.5 sm:px-4 rounded-full text-xs font-bold text-white flex items-center gap-1.5 transition-all duration-200 hover:scale-105 shadow-md shrink-0"
+                style={{ background: 'var(--terracotta)' }}
+              >
+                <span>
+                  {nextPendingField.pageNumber !== currentPage
+                    ? `Go to Page ${nextPendingField.pageNumber} →`
+                    : `Sign Here ✍️`}
+                </span>
+              </button>
+            </div>
           </div>
         </aside>
       )}
@@ -1173,7 +1223,7 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
       {/* 2. If NO fields assigned to this signer yet: provide Add Signature action */}
       {myFields.length === 0 && (
         <aside className="sticky bottom-4 z-40 px-4 flex justify-center pointer-events-none">
-          <div className="pointer-events-auto max-w-md w-full shadow-2xl rounded-full p-1.5 pl-4 pr-1.5 flex items-center justify-between gap-3 border backdrop-blur-xl animate-slideUp bg-[var(--surface)]/95 border-[var(--border)]">
+          <div className="pointer-events-auto max-w-lg w-full shadow-2xl rounded-full p-1.5 pl-4 pr-1.5 flex items-center justify-between gap-2 sm:gap-3 border backdrop-blur-xl animate-slideUp bg-[var(--surface)]/95 border-[var(--border)]">
             <div className="flex items-center gap-2 text-xs truncate">
               <span className="h-2 w-2 rounded-full bg-[var(--moss)] animate-pulse shrink-0" />
               <span className="font-bold text-[var(--fg)] truncate">
@@ -1181,14 +1231,35 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
               </span>
             </div>
 
-            <button
-              onClick={() => handleStartAddSignature()}
-              className="btn-primary text-xs py-2 px-4 shadow-md flex items-center gap-1.5 shrink-0"
-              style={{ background: 'var(--moss)', color: '#F3F4F1' }}
-            >
-              <PenTool className="h-3.5 w-3.5" />
-              <span>Add Signature ✍️</span>
-            </button>
+            <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+              {recentSignature && (
+                <button
+                  type="button"
+                  onClick={() => handleSelectSignature(recentSignature.dataUrl)}
+                  className="h-9 px-2.5 sm:px-3 rounded-full border border-[var(--moss)]/40 bg-white/90 dark:bg-black/40 hover:bg-[var(--moss-dim)] transition-all duration-200 hover:scale-105 flex items-center gap-1.5 sm:gap-2 shadow-sm shrink-0 group cursor-pointer"
+                  title={`Quick sign with recent signature: ${recentSignature.label || 'Signature'}`}
+                  aria-label="Quick sign with recent signature"
+                >
+                  <img
+                    src={recentSignature.dataUrl}
+                    alt={recentSignature.label || 'Recent signature'}
+                    className="h-5 sm:h-6 w-auto max-w-[65px] sm:max-w-[90px] object-contain select-none"
+                  />
+                  <span className="text-[11px] font-bold text-[var(--moss)] hidden sm:inline group-hover:underline">
+                    Quick Sign
+                  </span>
+                </button>
+              )}
+
+              <button
+                onClick={() => handleStartAddSignature()}
+                className="btn-primary text-xs py-2 px-3 sm:px-4 shadow-md flex items-center gap-1.5 shrink-0"
+                style={{ background: 'var(--moss)', color: '#F3F4F1' }}
+              >
+                <PenTool className="h-3.5 w-3.5" />
+                <span>Add Signature ✍️</span>
+              </button>
+            </div>
           </div>
         </aside>
       )}
