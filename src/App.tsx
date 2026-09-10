@@ -67,7 +67,7 @@ export function App() {
 
   const { showToast } = useToastStore();
   const updateDimensions = useFoldableStore((s) => s.updateDimensions);
-  const { user, isLoading, isAuthModalOpen, closeAuthModal, initializeAuth } = useAuthStore();
+  const { user, isInitializing, isAuthModalOpen, closeAuthModal, initializeAuth } = useAuthStore();
   const [guestMode, setGuestMode] = useState(false);
 
   // Modals & Local UI state
@@ -193,7 +193,7 @@ export function App() {
   }
 
   // Initial auth check loading state
-  if (isLoading) {
+  if (isInitializing) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[var(--bg)]">
         <div className="flex flex-col items-center gap-3">

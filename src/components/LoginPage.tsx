@@ -41,6 +41,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigateHome }) => {
     user,
     isConfigured,
     isLoading,
+    isGoogleLoading,
     signInWithGoogle,
     signInWithDemoGoogle,
     signInWithPassword,
@@ -270,8 +271,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigateHome }) => {
               <button
                 type="button"
                 onClick={handleGoogleSignIn}
-                disabled={isLoading}
-                className="w-full flex items-center justify-center gap-3.5 px-5 py-3.5 rounded-full font-bold text-sm transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] outline-none select-none cursor-pointer"
+                disabled={isLoading || isGoogleLoading}
+                className="w-full flex items-center justify-center gap-3.5 px-5 py-3.5 rounded-full font-bold text-sm transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] outline-none select-none cursor-pointer disabled:opacity-80 disabled:cursor-wait"
                 style={{
                   background: '#ffffff',
                   border: '1.5px solid var(--border)',
@@ -279,8 +280,17 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigateHome }) => {
                   boxShadow: '0 4px 14px rgba(44, 44, 36, 0.08)',
                 }}
               >
-                <GoogleIcon className="w-5 h-5" />
-                <span>Continue with Google</span>
+                {isGoogleLoading ? (
+                  <>
+                    <span className="animate-spin rounded-full h-4 w-4 border-2 border-[var(--moss)] border-t-transparent" />
+                    <span>Connecting to Google…</span>
+                  </>
+                ) : (
+                  <>
+                    <GoogleIcon className="w-5 h-5" />
+                    <span>Continue with Google</span>
+                  </>
+                )}
               </button>
 
               {/* Supabase Not Configured Helper / Alert */}

@@ -19,6 +19,7 @@ import { SignatureField, FieldType, SavedSignature, Recipient } from '../types';
 import { getDefaultSignature, getSavedSignatures } from '../lib/storage';
 import { deliveryService } from '../services/deliveryService';
 import { Dropdown } from './ui/Dropdown';
+import { useDocumentStore } from '../store/useDocumentStore';
 
 export const getSignerColor = (order?: number) => {
   if (order === 1) return '#C18C5D'; // Terracotta
@@ -105,9 +106,15 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
     scrollTop: 0,
   });
   const hasPannedRef = useRef<boolean>(false);
+  // Track whether dragging or resizing is currently active so mouseup flushes save
+  const dragActiveRef = useRef(false);
+  dragActiveRef.current = isDragging || isResizing;
 
   useEffect(() => {
     const handleGlobalMouseUp = () => {
+      if (dragActiveRef.current) {
+        useDocumentStore.getState().saveCurrentFields();
+      }
       setIsDragging(false);
       setIsResizing(false);
       setIsPanning(false);
@@ -291,6 +298,9 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
   };
 
   const handleMouseUp = () => {
+    if (dragActiveRef.current) {
+      useDocumentStore.getState().saveCurrentFields();
+    }
     setIsDragging(false);
     setIsResizing(false);
     setIsPanning(false);

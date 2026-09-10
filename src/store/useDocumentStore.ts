@@ -48,14 +48,14 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
       set((state) => {
         const nextFields = fields(state.fields);
         if (state.selectedDoc) {
-          documentService.saveFields(state.selectedDoc.id, nextFields);
+          documentService.saveFields(state.selectedDoc.id, nextFields, false);
         }
         return { fields: nextFields };
       });
     } else {
       const { selectedDoc } = get();
       if (selectedDoc) {
-        documentService.saveFields(selectedDoc.id, fields);
+        documentService.saveFields(selectedDoc.id, fields, false);
       }
       set({ fields });
     }
@@ -111,7 +111,7 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
     const { selectedDoc, fields } = get();
     if (!selectedDoc) return;
     try {
-      await documentService.saveFields(selectedDoc.id, fields);
+      await documentService.saveFields(selectedDoc.id, fields, true);
     } catch (err: any) {
       useToastStore.getState().showToast('Failed to save field placements', 'error');
       throw err;
@@ -124,7 +124,7 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
 
     set({ isSigningLoading: true });
     try {
-      await documentService.saveFields(selectedDoc.id, fields);
+      await documentService.saveFields(selectedDoc.id, fields, true);
       const result = await documentService.signAndFlatten(selectedDoc.id, options);
       useToastStore.getState().showToast('Document signed and flattened successfully!', 'success');
       await get().fetchDocuments();

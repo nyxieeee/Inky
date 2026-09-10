@@ -166,6 +166,49 @@ export async function combineSignatureAndName(
     const img = new Image();
     img.crossOrigin = 'anonymous';
     img.onload = () => {
+      // 1. Measure the exact bounding box of visible pixels in the signature image
+      const tempCanvas = document.createElement('canvas');
+      tempCanvas.width = img.width;
+      tempCanvas.height = img.height;
+      const tempCtx = tempCanvas.getContext('2d');
+      if (!tempCtx) {
+        resolve(sigDataUrl);
+        return;
+      }
+      tempCtx.drawImage(img, 0, 0);
+
+      let minX = img.width;
+      let minY = img.height;
+      let maxX = 0;
+      let maxY = 0;
+      let hasPixels = false;
+      try {
+        const imgData = tempCtx.getImageData(0, 0, img.width, img.height);
+        const data = imgData.data;
+        for (let y = 0; y < img.height; y++) {
+          for (let x = 0; x < img.width; x++) {
+            if (data[(y * img.width + x) * 4 + 3] > 10) {
+              if (x < minX) minX = x;
+              if (x > maxX) maxX = x;
+              if (y < minY) minY = y;
+              if (y > maxY) maxY = y;
+              hasPixels = true;
+            }
+          }
+        }
+      } catch {
+        // ignore
+      }
+
+      const exactCropW = hasPixels ? Math.max(1, maxX - minX + 1) : img.width;
+      const exactCropH = hasPixels ? Math.max(1, maxY - minY + 1) : img.height;
+      const cropSrcX = hasPixels ? minX : 0;
+      const cropSrcY = hasPixels ? minY : 0;
+
+      const scale = 2;
+      const sigW = exactCropW * scale;
+      const sigH = exactCropH * scale;
+
       const canvas = document.createElement('canvas');
       const ctx = canvas.getContext('2d');
       if (!ctx) {
@@ -173,27 +216,31 @@ export async function combineSignatureAndName(
         return;
       }
 
-      const scale = 2;
-      const fontSize = 25 * scale;
+      const fontSize = 22 * scale;
       const font = `700 ${fontSize}px ${fontFamily}`;
-
       ctx.font = font;
+
       const cleanName = name.trim().toUpperCase();
-      const textMetrics = ctx.measureText(cleanName);
-      const textWidth = textMetrics.width;
+      const metrics = ctx.measureText(cleanName);
+      const textWidth = metrics.width;
+      // Exact cap-height / ascent of the text
+      const actualAscent = metrics.actualBoundingBoxAscent || fontSize * 0.72;
+      const actualDescent = metrics.actualBoundingBoxDescent || fontSize * 0.22;
 
-      const sigW = img.width * scale;
-      const sigH = img.height * scale;
-
-      const paddingX = 24 * scale;
+      const paddingX = 20 * scale;
       const contentWidth = Math.max(sigW, textWidth);
       const totalWidth = contentWidth + paddingX * 2;
+
+      // nameSpacing is in visual CSS pixels (e.g. -15px to +35px)
       const gap = Math.round(nameSpacing * scale);
-      const textHeight = fontSize * 1.25;
-      const totalHeight = Math.max(
-        sigH + (12 * scale),
-        (4 * scale) + sigH + gap + textHeight + (10 * scale)
-      );
+
+      const sigTop = 4 * scale;
+      const sigBottom = sigTop + sigH;
+      // Place the text baseline so that the top edge of capital letters is at (sigBottom + gap)
+      const textBaselineY = sigBottom + gap + actualAscent;
+      const textBottom = textBaselineY + actualDescent;
+
+      const totalHeight = Math.max(sigBottom + 8 * scale, textBottom + 8 * scale);
 
       canvas.width = Math.round(totalWidth);
       canvas.height = Math.round(totalHeight);
@@ -202,15 +249,24 @@ export async function combineSignatureAndName(
       ctx.font = font;
       ctx.fillStyle = textColor;
       ctx.textAlign = 'center';
-      ctx.textBaseline = 'top';
+      ctx.textBaseline = 'alphabetic';
 
-      // 1. Draw signature centered at top
+      // 1. Draw signature tightly cropped, centered horizontally
       const sigX = (totalWidth - sigW) / 2;
-      ctx.drawImage(img, sigX, 4 * scale, sigW, sigH);
+      ctx.drawImage(
+        tempCanvas,
+        cropSrcX,
+        cropSrcY,
+        exactCropW,
+        exactCropH,
+        sigX,
+        sigTop,
+        sigW,
+        sigH
+      );
 
-      // 2. Draw printed name directly below signature (no line)
-      const textY = Math.max(4 * scale, (4 * scale) + sigH + gap);
-      ctx.fillText(cleanName, totalWidth / 2, textY);
+      // 2. Draw printed name with exact gap
+      ctx.fillText(cleanName, totalWidth / 2, textBaselineY);
 
       resolve(trimCanvas(canvas, 6));
     };

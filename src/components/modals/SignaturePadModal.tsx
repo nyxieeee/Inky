@@ -411,7 +411,7 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
 
   const handleSaveAndSelect = async () => {
     let dataUrl = ''; let label = 'Signature';
-    const effectiveName = printedName.trim();
+    const effectiveName = printedName.trim().toUpperCase();
     if (activeTab === 'draw') {
       if (!sigPadRef.current || sigPadRef.current.isEmpty()) {
         useToastStore.getState().showToast('Please draw a signature first', 'warning');
@@ -445,7 +445,7 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
       const rawResult = event.target?.result as string;
       if (rawResult) {
         let cleanResult = await processUploadedSignature(rawResult);
-        const effectiveName = printedName.trim();
+        const effectiveName = printedName.trim().toUpperCase();
         if (includePrintedName && effectiveName) {
           cleanResult = await combineSignatureAndName(cleanResult, effectiveName, penColor, undefined, nameSpacing);
         }
@@ -566,24 +566,6 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
                   WebkitUserSelect: 'none',
                 }}
               />
-              {includePrintedName && printedName.trim() && (
-                <div
-                  className="absolute inset-x-0 pointer-events-none text-center select-none animate-fadeIn transition-all duration-75"
-                  style={{
-                    top: sigBottomY !== null
-                      ? `${Math.min(154, Math.max(8, sigBottomY + nameSpacing))}px`
-                      : undefined,
-                    bottom: sigBottomY === null ? '16px' : undefined,
-                  }}
-                >
-                  <span
-                    className="text-xs sm:text-sm font-extrabold tracking-wider uppercase truncate block px-2"
-                    style={{ color: penColor, fontFamily: 'Inter, system-ui, sans-serif' }}
-                  >
-                    {printedName.trim()}
-                  </span>
-                </div>
-              )}
               <button
                 onClick={handleClear}
                 className="absolute top-2.5 right-2.5 flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold transition-all duration-200 hover:scale-105"
@@ -724,23 +706,11 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
                 }}
               >
                 <span
-                  className="text-center select-none"
+                  className="text-center select-none py-2"
                   style={{ fontFamily: selectedFont, color: penColor, fontSize: 44, lineHeight: 1.2 }}
                 >
                   {typedText || 'Your Name'}
                 </span>
-                {includePrintedName && printedName.trim() && (
-                  <span
-                    className="text-center select-none font-bold uppercase tracking-wider text-xs sm:text-sm animate-fadeIn transition-all duration-100"
-                    style={{
-                      color: penColor,
-                      marginTop: `${nameSpacing}px`,
-                      fontFamily: 'Inter, system-ui, sans-serif',
-                    }}
-                  >
-                    {printedName.trim()}
-                  </span>
-                )}
               </div>
             </div>
 
@@ -873,9 +843,9 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
                     <input
                       type="text"
                       value={printedName}
-                      onChange={(e) => setPrintedName(e.target.value)}
+                      onChange={(e) => setPrintedName(e.target.value.toUpperCase())}
                       className="input-organic h-9 text-xs font-bold uppercase tracking-wider"
-                      placeholder="e.g. JUAN DELA CRUZ"
+                      placeholder="e.g. JOHN DOE"
                       autoFocus
                     />
                   </div>
@@ -885,10 +855,10 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-1.5">
                         <span className="text-[11px] font-bold" style={{ color: 'var(--fg)' }}>
-                          Agwat / Spacing ng Pangalan
+                          Name Spacing
                         </span>
                         <span className="text-[10px] text-[var(--fg-muted)]">
-                          (Papalapit o Papalayo)
+                          (Distance from signature)
                         </span>
                       </div>
                       <span
@@ -907,7 +877,7 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
                       <button
                         type="button"
                         onClick={() => setNameSpacing((prev) => Math.max(-15, prev - 2))}
-                        title="Papalapit sa pirma (Closer)"
+                        title="Closer to signature"
                         className="h-7 w-7 rounded-lg flex items-center justify-center font-bold text-sm transition-all hover:bg-black/5 active:scale-95 select-none"
                         style={{ border: '1px solid var(--border-light)', color: 'var(--fg)' }}
                       >
@@ -925,7 +895,7 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
                       <button
                         type="button"
                         onClick={() => setNameSpacing((prev) => Math.min(35, prev + 2))}
-                        title="Papalayo sa pirma (Farther)"
+                        title="Farther from signature"
                         className="h-7 w-7 rounded-lg flex items-center justify-center font-bold text-sm transition-all hover:bg-black/5 active:scale-95 select-none"
                         style={{ border: '1px solid var(--border-light)', color: 'var(--fg)' }}
                       >
@@ -936,7 +906,7 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
                     {/* Preset buttons */}
                     <div className="flex items-center justify-between text-[10px] pt-0.5">
                       <span className="text-[10px] text-[var(--fg-muted)] font-medium">
-                        ◀ Papalapit (Dikit)
+                        ◀ Closer
                       </span>
                       <div className="flex gap-1.5">
                         <button
@@ -948,7 +918,7 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
                               : 'bg-black/5 hover:bg-black/10 text-[var(--fg-muted)]'
                           }`}
                         >
-                          Dikit (-6px)
+                          Tight (-6px)
                         </button>
                         <button
                           type="button"
@@ -959,7 +929,7 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
                               : 'bg-black/5 hover:bg-black/10 text-[var(--fg-muted)]'
                           }`}
                         >
-                          Sakto (8px)
+                          Normal (8px)
                         </button>
                         <button
                           type="button"
@@ -970,11 +940,11 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
                               : 'bg-black/5 hover:bg-black/10 text-[var(--fg-muted)]'
                           }`}
                         >
-                          Malayo (22px)
+                          Loose (22px)
                         </button>
                       </div>
                       <span className="text-[10px] text-[var(--fg-muted)] font-medium">
-                        Papalayo (Awat) ▶
+                        Farther ▶
                       </span>
                     </div>
                   </div>
@@ -983,31 +953,36 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
                   {printedName.trim() && (
                     <div
                       className="p-3 rounded-xl border border-[rgba(93,112,82,0.25)] bg-white/80 flex flex-col items-center justify-center overflow-hidden transition-all duration-100 shadow-sm"
-                      style={{ minHeight: 75 }}
+                      style={{ minHeight: 80 }}
                     >
-                      <div className="text-[9px] font-bold tracking-wider uppercase text-[var(--fg-muted)] opacity-60 mb-1 select-none">
-                        Live Preview (Pagsasamahin sa Iisang Box)
+                      <div className="flex items-center justify-between w-full mb-1.5 select-none px-1">
+                        <span className="text-[10px] font-bold tracking-wider uppercase text-[var(--fg)] opacity-80">
+                          Live Preview (Produced Signature)
+                        </span>
+                        <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-[var(--moss-dim)] text-[var(--moss)]">
+                          Exact Output
+                        </span>
                       </div>
                       <div className="flex flex-col items-center justify-center w-full">
                         {combinedPreviewUrl ? (
                           <img
                             src={combinedPreviewUrl}
                             alt="Live Preview"
-                            className="max-h-20 max-w-[280px] object-contain select-none transition-all duration-75"
+                            className="max-h-24 max-w-[320px] object-contain select-none transition-all duration-75"
                           />
-                        ) : activeTab === 'draw' && sigBottomY === null ? (
+                        ) : activeTab === 'draw' && (!drawnPreview && (!sigPadRef.current || sigPadRef.current.isEmpty())) ? (
                           <div className="text-center py-2">
                             <span
                               className="block italic text-xs mb-1"
                               style={{ color: penColor, fontFamily: 'Caveat, cursive', fontSize: 20 }}
                             >
-                              Pumirma sa drawing pad sa itaas
+                              Draw signature on pad above
                             </span>
                             <span
                               className="font-extrabold uppercase tracking-wider text-[11px] text-center select-none block"
                               style={{ color: penColor, fontFamily: 'Inter, system-ui, sans-serif' }}
                             >
-                              {printedName.trim()}
+                              {printedName.trim().toUpperCase()}
                             </span>
                           </div>
                         ) : (
@@ -1026,7 +1001,7 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
                                 fontFamily: 'Inter, system-ui, sans-serif',
                               }}
                             >
-                              {printedName.trim()}
+                              {printedName.trim().toUpperCase()}
                             </span>
                           </div>
                         )}
@@ -1035,7 +1010,7 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
                   )}
 
                   <p className="text-[10px] text-[var(--fg-muted)] leading-tight">
-                    Pagsasamahin sa iisang box ang pirma at nakalimbag na pangalan para hindi na magkahiwalay kapag inilagay sa dokumento.
+                    Signature and printed name will be merged into a single element so they stay together on the document.
                   </p>
                 </div>
               )}

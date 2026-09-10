@@ -94,8 +94,6 @@ async function ensureCloudSync(docId: string, recipients: Recipient[]): Promise<
   // 2. Sync signature fields
   const fields = storage.getLocalDocumentFields(docId);
   if (fields.length > 0) {
-    // Delete existing and re-insert to avoid conflicts
-    await supabase.from('signature_fields').delete().eq('document_id', docId);
     const fieldRows = fields.map((f) => ({
       id: f.id,
       document_id: docId,
@@ -105,17 +103,20 @@ async function ensureCloudSync(docId: string, recipients: Recipient[]): Promise<
       width: f.width,
       height: f.height,
       field_type: f.fieldType,
-      value: f.value,
-      font_family: f.fontFamily,
-      required: f.required,
-      signer_id: f.signerId,
-      signer_email: f.signerEmail,
-      signer_order: f.signerOrder,
+      value: f.value || null,
+      font_family: f.fontFamily || null,
+      required: f.required ?? true,
+      signer_id: f.signerId || null,
+      signer_email: f.signerEmail || null,
+      signer_order: f.signerOrder || null,
+      signer_name: f.signerName || null,
     }));
-    const { error: fieldsErr } = await supabase.from('signature_fields').insert(fieldRows);
+    const { error: fieldsErr } = await supabase.from('signature_fields').upsert(fieldRows, { onConflict: 'id' });
     if (fieldsErr) {
       console.error('Failed to sync fields to Supabase:', fieldsErr);
     }
+    const fieldIds = fields.map((f) => f.id);
+    await supabase.from('signature_fields').delete().eq('document_id', docId).not('id', 'in', `(${fieldIds.map((fid) => `"${fid}"`).join(',')})`);
   }
 
   // 3. Sync recipients

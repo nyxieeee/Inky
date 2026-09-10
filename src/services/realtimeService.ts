@@ -116,6 +116,7 @@ export const realtimeService = {
                     signerId: newField.signer_id,
                     signerEmail: newField.signer_email,
                     signerOrder: newField.signer_order,
+                    signerName: newField.signer_name,
                   },
                 ],
               });
@@ -123,7 +124,7 @@ export const realtimeService = {
           }
         } else if (payload.eventType === 'DELETE') {
           const deletedField = payload.old;
-          if (currentSelected) {
+          if (currentSelected && deletedField?.id) {
             const currentFields = useDocumentStore.getState().fields;
             useDocumentStore.setState({
               fields: currentFields.filter((f) => f.id !== deletedField.id),

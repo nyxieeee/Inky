@@ -7,6 +7,7 @@ import { supabase, isSupabaseConfigured } from '../lib/supabase';
 
 // In-memory cache for active blob URLs so they can be rendered in <canvas> / pdf.js
 const blobUrlCache = new Map<string, string>();
+let saveDebounceTimer: any = null;
 
 export const documentService = {
   async listDocuments(params?: { status?: string; source?: string; search?: string }): Promise<Document[]> {
@@ -232,6 +233,7 @@ export const documentService = {
               signerId: f.signer_id,
               signerEmail: f.signer_email,
               signerOrder: f.signer_order,
+              signerName: f.signer_name,
             }));
             storage.saveLocalDocumentFields(id, fields);
           }
@@ -274,33 +276,75 @@ export const documentService = {
     };
   },
 
-  async saveFields(id: string, fields: SignatureField[]): Promise<void> {
+  async saveFields(id: string, fields: SignatureField[], immediate = false): Promise<void> {
     storage.saveLocalDocumentFields(id, fields);
 
-    if (isSupabaseConfigured() && supabase) {
-      (async () => {
-        try {
-          await supabase.from('signature_fields').delete().eq('document_id', id);
-          if (fields.length > 0) {
-            const rows = fields.map((f) => ({
-              id: f.id,
-              document_id: id,
-              page_number: f.pageNumber,
-              x: f.x,
-              y: f.y,
-              width: f.width,
-              height: f.height,
-              field_type: f.fieldType,
-              value: f.value,
-              font_family: f.fontFamily,
-              required: f.required,
-            }));
-            await supabase.from('signature_fields').insert(rows);
+    if (!isSupabaseConfigured() || !supabase) return;
+
+    const executeSupabaseSave = async () => {
+      try {
+        const fieldIds = fields.map((f) => f.id);
+
+        if (fields.length > 0) {
+          const rows = fields.map((f) => ({
+            id: f.id,
+            document_id: id,
+            page_number: f.pageNumber,
+            x: f.x,
+            y: f.y,
+            width: f.width,
+            height: f.height,
+            field_type: f.fieldType,
+            value: f.value || null,
+            font_family: f.fontFamily || null,
+            required: f.required ?? true,
+            signer_id: f.signerId || null,
+            signer_email: f.signerEmail || null,
+            signer_order: f.signerOrder || null,
+            signer_name: f.signerName || null,
+          }));
+
+          // Upsert fields in place without deleting existing rows
+          const { error: upsertErr } = await supabase!
+            .from('signature_fields')
+            .upsert(rows, { onConflict: 'id' });
+
+          if (upsertErr) {
+            console.warn('Supabase upsert fields error:', upsertErr);
           }
-        } catch (err) {
-          console.warn('Supabase fields save error:', err);
+
+          // Clean up only fields that were actually removed from this document
+          const { error: delErr } = await supabase!
+            .from('signature_fields')
+            .delete()
+            .eq('document_id', id)
+            .not('id', 'in', `(${fieldIds.map((fid) => `"${fid}"`).join(',')})`);
+
+          if (delErr) {
+            console.warn('Supabase orphan delete error:', delErr);
+          }
+        } else {
+          await supabase!
+            .from('signature_fields')
+            .delete()
+            .eq('document_id', id);
         }
-      })();
+      } catch (err) {
+        console.warn('Supabase fields save error:', err);
+      }
+    };
+
+    if (immediate) {
+      if (saveDebounceTimer) {
+        clearTimeout(saveDebounceTimer);
+        saveDebounceTimer = null;
+      }
+      await executeSupabaseSave();
+    } else {
+      if (saveDebounceTimer) {
+        clearTimeout(saveDebounceTimer);
+      }
+      saveDebounceTimer = setTimeout(executeSupabaseSave, 400);
     }
   },
 

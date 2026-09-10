@@ -8,6 +8,8 @@ interface AuthState {
   user: User | null;
   session: Session | null;
   isLoading: boolean;
+  isInitializing: boolean;
+  isGoogleLoading: boolean;
   isAuthModalOpen: boolean;
   isConfigured: boolean;
 
@@ -29,7 +31,9 @@ interface AuthState {
 export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
   session: null,
-  isLoading: true,
+  isLoading: false,
+  isInitializing: true,
+  isGoogleLoading: false,
   isAuthModalOpen: false,
   isConfigured: isSupabaseConfigured(),
 
@@ -38,7 +42,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   initializeAuth: async () => {
     if (!supabase) {
-      set({ isLoading: false, isConfigured: false });
+      set({ isLoading: false, isInitializing: false, isConfigured: false });
       return;
     }
 
@@ -50,6 +54,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         session: data.session,
         user: data.session?.user || null,
         isLoading: false,
+        isInitializing: false,
         isConfigured: true,
       });
 
@@ -63,11 +68,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         set({
           session,
           user: nextUser,
+          isInitializing: false,
+          isLoading: false,
+          isGoogleLoading: false,
         });
       });
     } catch (e: any) {
       console.warn('Supabase auth initialization error:', e);
-      set({ isLoading: false });
+      set({ isLoading: false, isInitializing: false });
     }
   },
 
@@ -78,7 +86,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       return { success: false, error: msg };
     }
 
-    set({ isLoading: true });
+    set({ isGoogleLoading: true, isLoading: true });
     try {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
@@ -88,13 +96,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       });
 
       if (error) throw error;
+      // Do not reset isGoogleLoading to false on success so the button shows a stable loading spinner until the browser navigates away
       return { success: true };
     } catch (err: any) {
       const msg = err.message || 'Failed to sign in with Google';
       useToastStore.getState().showToast(msg, 'error');
+      set({ isGoogleLoading: false, isLoading: false });
       return { success: false, error: msg };
-    } finally {
-      set({ isLoading: false });
     }
   },
 

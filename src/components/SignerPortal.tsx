@@ -62,6 +62,10 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token }) => {
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const hasDraggedRef = useRef(false);
+  const dragJustEndedRef = useRef(false);
+  const fieldsRef = useRef(fields);
+  fieldsRef.current = fields;
 
   // Load context on mount
   useEffect(() => {
@@ -373,12 +377,15 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token }) => {
     e?.stopPropagation();
     if (!containerRef.current) return;
     const rect = containerRef.current.getBoundingClientRect();
-    const field = fields.find((f) => f.id === fieldId);
+    const currentFields = fieldsRef.current;
+    const field = currentFields.find((f) => f.id === fieldId);
     if (!field) return;
 
     const fieldPxX = (field.x / 100) * rect.width;
     const fieldPxY = (field.y / 100) * rect.height;
 
+    hasDraggedRef.current = false;
+    dragJustEndedRef.current = false;
     setDraggingFieldId(fieldId);
     setDragOffset({
       x: clientX - rect.left - fieldPxX,
@@ -389,7 +396,8 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token }) => {
   const onDragMove = (clientX: number, clientY: number) => {
     if (!draggingFieldId || !containerRef.current) return;
     const rect = containerRef.current.getBoundingClientRect();
-    const field = fields.find((f) => f.id === draggingFieldId);
+    const currentFields = fieldsRef.current;
+    const field = currentFields.find((f) => f.id === draggingFieldId);
     if (!field) return;
 
     const mouseX = clientX - rect.left - dragOffset.x;
@@ -397,6 +405,8 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token }) => {
 
     const pctX = Math.max(0, Math.min(100 - field.width, (mouseX / rect.width) * 100));
     const pctY = Math.max(0, Math.min(100 - field.height, (mouseY / rect.height) * 100));
+
+    hasDraggedRef.current = true;
 
     setFields((prev) =>
       prev.map((f) =>
@@ -414,6 +424,13 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token }) => {
       onDragMove(e.clientX, e.clientY);
     };
     const handlePointerUp = () => {
+      if (hasDraggedRef.current) {
+        dragJustEndedRef.current = true;
+        setTimeout(() => {
+          dragJustEndedRef.current = false;
+          hasDraggedRef.current = false;
+        }, 200);
+      }
       setDraggingFieldId(null);
     };
     const handleTouchMove = (e: TouchEvent) => {
@@ -422,6 +439,13 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token }) => {
       }
     };
     const handleTouchEnd = () => {
+      if (hasDraggedRef.current) {
+        dragJustEndedRef.current = true;
+        setTimeout(() => {
+          dragJustEndedRef.current = false;
+          hasDraggedRef.current = false;
+        }, 200);
+      }
       setDraggingFieldId(null);
     };
 
@@ -541,9 +565,9 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token }) => {
 
   const handleCanvasClick = (e: React.MouseEvent<HTMLDivElement>) => {
     // If clicking on an existing field, button, or dragging, ignore
+    if (draggingFieldId || hasDraggedRef.current || dragJustEndedRef.current) return;
     if ((e.target as HTMLElement).closest('.signature-field-box')) return;
     if ((e.target as HTMLElement).closest('button')) return;
-    if (draggingFieldId) return;
 
     if (!containerRef.current) return;
     const rect = containerRef.current.getBoundingClientRect();

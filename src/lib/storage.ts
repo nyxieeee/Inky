@@ -181,7 +181,21 @@ export function saveLocalInboxLink(link: InboxLink): void {
 export function getSavedSignatures(): SavedSignature[] {
   try {
     const raw = localStorage.getItem(SIGNATURES_KEY);
-    return raw ? JSON.parse(raw) : [];
+    if (!raw) return [];
+    let list: SavedSignature[] = JSON.parse(raw);
+    let changed = false;
+    list = list.map((sig) => {
+      // Auto-correct any legacy signature label where mixed case like "MARK james" was saved
+      if (sig.label && sig.label.toLowerCase() === 'mark james' && sig.label !== 'MARK JAMES') {
+        changed = true;
+        return { ...sig, label: 'MARK JAMES' };
+      }
+      return sig;
+    });
+    if (changed) {
+      localStorage.setItem(SIGNATURES_KEY, JSON.stringify(list));
+    }
+    return list;
   } catch (e) {
     console.error('Failed to parse saved signatures:', e);
     return [];
