@@ -47,18 +47,62 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
 
     try {
+      // 1. Check for OAuth hash tokens in URL (recovers from double-hash "##access_token=..." or single-hash "#access_token=...")
+      if (typeof window !== 'undefined' && window.location.hash) {
+        const rawHash = window.location.hash;
+        const cleanHash = rawHash.replace(/^#+/, '');
+        if (cleanHash.includes('access_token=')) {
+          const params = new URLSearchParams(cleanHash);
+          const accessToken = params.get('access_token');
+          const refreshToken = params.get('refresh_token');
+
+          if (accessToken) {
+            try {
+              const { data: sessionData, error: sessionErr } = await supabase.auth.setSession({
+                access_token: accessToken,
+                refresh_token: refreshToken || '',
+              });
+              if (!sessionErr && sessionData?.session) {
+                set({
+                  session: sessionData.session,
+                  user: sessionData.session.user,
+                  isLoading: false,
+                  isInitializing: false,
+                  isConfigured: true,
+                });
+                // Remove the raw tokens from URL address bar for clean display and security
+                window.history.replaceState({}, '', window.location.pathname + window.location.search);
+              }
+            } catch (recoveryErr) {
+              console.warn('Manual hash token recovery notice:', recoveryErr);
+            }
+          }
+        }
+      }
+
+      // 2. Fetch existing session
       const { data, error } = await supabase.auth.getSession();
       if (error) throw error;
 
-      set({
-        session: data.session,
-        user: data.session?.user || null,
-        isLoading: false,
-        isInitializing: false,
-        isConfigured: true,
-      });
+      if (data?.session?.user) {
+        set({
+          session: data.session,
+          user: data.session.user,
+          isLoading: false,
+          isInitializing: false,
+          isConfigured: true,
+        });
+      } else {
+        set({
+          session: null,
+          user: null,
+          isLoading: false,
+          isInitializing: false,
+          isConfigured: true,
+        });
+      }
 
-      // Subscribe to auth state changes
+      // 3. Subscribe to auth state changes
       supabase.auth.onAuthStateChange((event, session) => {
         const prevUser = get().user;
         const nextUser = session?.user || null;
@@ -88,10 +132,19 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
     set({ isGoogleLoading: true, isLoading: true });
     try {
+      // Clean redirect URL: strip any existing hashes to prevent double-hash (##access_token=)
+      let targetRedirect: string | undefined;
+      if (redirectTo) {
+        targetRedirect = redirectTo.split('#')[0];
+      } else if (typeof window !== 'undefined') {
+        const path = window.location.pathname === '/login' ? '/' : window.location.pathname;
+        targetRedirect = window.location.origin + path;
+      }
+
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: redirectTo || (typeof window !== 'undefined' ? window.location.href : undefined),
+          redirectTo: targetRedirect,
         },
       });
 
