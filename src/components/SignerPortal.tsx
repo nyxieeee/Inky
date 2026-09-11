@@ -33,7 +33,9 @@ import { getSignerColor, TEXT_FONT_OPTIONS } from './PdfViewer';
 import { Dropdown } from './ui/Dropdown';
 import { FastTextInput } from './ui/FastTextInput';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import * as storage from '../lib/storage';
 import { getSavedSignatures, getDefaultSignature, getLocalPdfBlob } from '../lib/storage';
+import { flattenPdfSignatures } from '../lib/pdf';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js`;
 
@@ -81,6 +83,7 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submittedResult, setSubmittedResult] = useState<{ allComplete: boolean; message: string } | null>(null);
   const [isReopening, setIsReopening] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
 
   const [canvasMountedVersion, setCanvasMountedVersion] = useState<number>(0);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -510,6 +513,86 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
     }
   };
 
+  const handleDownloadSignedPdf = async () => {
+    let baseBlob = context?.pdfBlob;
+
+    // Fallback 1: download from Supabase storage if file_path is known
+    if (!baseBlob && context?.document?.filePath && isSupabaseConfigured() && supabase) {
+      try {
+        const { data } = await supabase.storage.from('documents').download(context.document.filePath);
+        if (data) baseBlob = data;
+      } catch (e) {
+        console.warn('Supabase storage download fallback notice:', e);
+      }
+    }
+
+    // Fallback 2: local storage
+    if (!baseBlob && doc?.id) {
+      try {
+        const localBlob = await getLocalPdfBlob(doc.id);
+        if (localBlob) baseBlob = localBlob;
+      } catch (e) {
+        console.warn('Local storage pdf blob fallback notice:', e);
+      }
+    }
+
+    if (!baseBlob) {
+      useToastStore.getState().showToast('Original PDF file data not available', 'error');
+      return;
+    }
+
+    setIsExporting(true);
+    try {
+      // 1. Merge latest fields with current fieldValues
+      const mergedFields: SignatureField[] = fields.map((f) => {
+        const local = fieldValues[f.id];
+        return {
+          ...f,
+          value: local?.value ?? f.value ?? '',
+          fontFamily: local?.fontFamily ?? f.fontFamily,
+        };
+      });
+
+      // 2. Read arrayBuffer from baseBlob
+      const arrayBuffer = await baseBlob.arrayBuffer();
+      const rawBytes = new Uint8Array(arrayBuffer);
+
+      // 3. Flatten signatures, dates, and text onto the PDF
+      const signedBytes = await flattenPdfSignatures(rawBytes, mergedFields, {
+        signerName: recipient?.name,
+        signerEmail: recipient?.email,
+      });
+
+      // 4. Cache into local storage
+      if (doc?.id) {
+        try {
+          await storage.storeSignedPdfBytes(doc.id, signedBytes);
+        } catch (_e) {
+          // non-critical
+        }
+      }
+
+      // 5. Trigger download
+      const safeTitle = (doc.title || 'signed_document').replace(/\.pdf$/i, '');
+      const blob = new Blob([signedBytes as any], { type: 'application/pdf' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${safeTitle}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+
+      useToastStore.getState().showToast('Signed PDF exported successfully!', 'success');
+    } catch (err: any) {
+      console.error('Failed to export signed PDF:', err);
+      useToastStore.getState().showToast(err.message || 'Failed to export signed PDF', 'error');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleDownloadPdf = handleDownloadSignedPdf;
+
   // Check if this recipient already signed previously (and hasn't chosen to reopen/edit)
   if (recipient.status === 'signed' && !submittedResult && !isReopening) {
     return (
@@ -566,17 +649,17 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  const url = URL.createObjectURL(context.pdfBlob!);
-                  const a = document.createElement('a');
-                  a.href = url;
-                  a.download = `${doc.title}.pdf`;
-                  a.click();
-                  URL.revokeObjectURL(url);
+                  handleDownloadSignedPdf();
                 }}
+                disabled={isExporting}
                 className="btn-outline w-full justify-center text-xs py-2.5 flex items-center gap-2 cursor-pointer"
               >
-                <Download className="h-4 w-4" />
-                <span>Download Signed Document</span>
+                {isExporting ? (
+                  <span className="animate-spin rounded-full h-4 w-4 border-2 border-[var(--moss)] border-t-transparent" />
+                ) : (
+                  <Download className="h-4 w-4" />
+                )}
+                <span>{isExporting ? 'Generating Signed PDF...' : 'Download Signed Document'}</span>
               </button>
             )}
 
@@ -650,18 +733,18 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  const url = URL.createObjectURL(context.pdfBlob!);
-                  const a = document.createElement('a');
-                  a.href = url;
-                  a.download = `${doc.title}.pdf`;
-                  a.click();
-                  URL.revokeObjectURL(url);
+                  handleDownloadSignedPdf();
                 }}
+                disabled={isExporting}
                 className="btn-outline w-full !px-2.5 sm:!px-3 !h-11 text-xs flex items-center justify-center gap-1.5 cursor-pointer min-w-0"
                 title="Download a copy of the signed PDF"
               >
-                <Download className="h-3.5 w-3.5 shrink-0" />
-                <span className="truncate whitespace-nowrap">Download PDF</span>
+                {isExporting ? (
+                  <span className="animate-spin rounded-full h-3.5 w-3.5 border-2 border-[var(--moss)] border-t-transparent" />
+                ) : (
+                  <Download className="h-3.5 w-3.5 shrink-0" />
+                )}
+                <span className="truncate whitespace-nowrap">{isExporting ? 'Generating...' : 'Download Signed PDF'}</span>
               </button>
             )}
 
@@ -882,16 +965,6 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
     useToastStore.getState().showToast('Text field added! Click to edit, drag to position.', 'success');
   };
 
-  const handleDownloadPdf = () => {
-    if (!context?.pdfBlob) return;
-    const url = URL.createObjectURL(context.pdfBlob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${doc.title || 'document'}.pdf`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
   const toolBtn = (
     label: string,
     icon: React.ReactNode,
@@ -985,6 +1058,29 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
       }));
 
       const res = await deliveryService.submitSignerFields(token, updates);
+
+      // Also flatten and store locally so immediate download is instant
+      if (context?.pdfBlob) {
+        try {
+          const mergedFields: SignatureField[] = fields.map((f) => {
+            const local = fieldValues[f.id];
+            return {
+              ...f,
+              value: local?.value ?? f.value ?? '',
+              fontFamily: local?.fontFamily ?? f.fontFamily,
+            };
+          });
+          const rawBytes = new Uint8Array(await context.pdfBlob.arrayBuffer());
+          const signedBytes = await flattenPdfSignatures(rawBytes, mergedFields, {
+            signerName: recipient?.name,
+            signerEmail: recipient?.email,
+          });
+          await storage.storeSignedPdfBytes(doc.id, signedBytes);
+        } catch (flattenErr) {
+          console.warn('Background signed PDF cache notice:', flattenErr);
+        }
+      }
+
       setSubmittedResult(res);
       useToastStore.getState().showToast('Signature recorded successfully!', 'success');
     } catch (err: any) {
@@ -1141,12 +1237,17 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
               {context?.pdfBlob && (
                 <button
                   type="button"
-                  onClick={handleDownloadPdf}
-                  className="btn-outline btn-sm"
-                  title="Download PDF copy"
+                  onClick={handleDownloadSignedPdf}
+                  disabled={isExporting}
+                  className="btn-outline btn-sm flex items-center gap-1.5 cursor-pointer"
+                  title="Download signed PDF with signatures and fields"
                 >
-                  <Download style={{ height: 13, width: 13 }} />
-                  <span className="hidden md:inline">Export</span>
+                  {isExporting ? (
+                    <span className="animate-spin rounded-full h-3.5 w-3.5 border-2 border-[var(--moss)] border-t-transparent" />
+                  ) : (
+                    <Download style={{ height: 13, width: 13 }} />
+                  )}
+                  <span className="hidden md:inline">{isExporting ? 'Exporting...' : 'Export'}</span>
                 </button>
               )}
 

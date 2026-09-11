@@ -13,6 +13,7 @@ import {
 import { Document } from '../types';
 import * as storage from '../lib/storage';
 import { downloadBlob, formatDateTime } from '../utils';
+import { flattenPdfSignatures } from '../lib/pdf';
 
 interface HistoryViewProps {
   documents: Document[];
@@ -38,16 +39,50 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
 
   const handleDownloadSigned = async (doc: Document, e: React.MouseEvent) => {
     e.stopPropagation();
-    const signedBytes = await storage.getSignedPdfBytes(doc.id) || await storage.getOriginalPdfBytes(doc.id);
+    let signedBytes = await storage.getSignedPdfBytes(doc.id);
+    if (!signedBytes) {
+      const bytes = await storage.getOriginalPdfBytes(doc.id);
+      if (bytes) {
+        const fields = storage.getLocalDocumentFields(doc.id);
+        if (fields.some((f) => !!f.value)) {
+          try {
+            signedBytes = await flattenPdfSignatures(bytes, fields);
+            await storage.storeSignedPdfBytes(doc.id, signedBytes);
+          } catch (err) {
+            console.warn('Failed to flatten signatures on the fly:', err);
+            signedBytes = bytes;
+          }
+        } else {
+          signedBytes = bytes;
+        }
+      }
+    }
     if (signedBytes) {
       const blob = new Blob([signedBytes as any], { type: 'application/pdf' });
-      downloadBlob(blob, `${doc.title.replace(/\s+/g, '_')}_signed.pdf`);
+      downloadBlob(blob, `${doc.title.replace(/\.pdf$/i, '').replace(/\s+/g, '_')}_signed.pdf`);
     }
   };
 
   const handleViewSigned = async (doc: Document, e: React.MouseEvent) => {
     e.stopPropagation();
-    const signedBytes = await storage.getSignedPdfBytes(doc.id) || await storage.getOriginalPdfBytes(doc.id);
+    let signedBytes = await storage.getSignedPdfBytes(doc.id);
+    if (!signedBytes) {
+      const bytes = await storage.getOriginalPdfBytes(doc.id);
+      if (bytes) {
+        const fields = storage.getLocalDocumentFields(doc.id);
+        if (fields.some((f) => !!f.value)) {
+          try {
+            signedBytes = await flattenPdfSignatures(bytes, fields);
+            await storage.storeSignedPdfBytes(doc.id, signedBytes);
+          } catch (err) {
+            console.warn('Failed to flatten signatures on the fly:', err);
+            signedBytes = bytes;
+          }
+        } else {
+          signedBytes = bytes;
+        }
+      }
+    }
     if (signedBytes) {
       const blob = new Blob([signedBytes as any], { type: 'application/pdf' });
       const url = URL.createObjectURL(blob);
