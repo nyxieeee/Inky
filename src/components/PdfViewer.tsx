@@ -22,6 +22,7 @@ import { SignatureField, FieldType, SavedSignature, Recipient } from '../types';
 import { getDefaultSignature, getSavedSignatures } from '../lib/storage';
 import { deliveryService } from '../services/deliveryService';
 import { Dropdown } from './ui/Dropdown';
+import { FastTextInput } from './ui/FastTextInput';
 import { useDocumentStore } from '../store/useDocumentStore';
 import { useToastStore } from '../store/useToastStore';
 
@@ -689,68 +690,50 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
                     <span>{field.signerName ? `${field.signerName}${locked ? ' (Signed)' : ''}` : `Signer ${field.signerOrder}`}</span>
                   </span>
                 )}
-                {field.value ? (
-                  field.value.startsWith('data:image') ? (
+                {field.fieldType === 'signature' ? (
+                  field.value?.startsWith('data:image') ? (
                     <img
                       src={field.value}
                       alt="Signature"
                       className="h-full w-full object-contain pointer-events-none select-none"
                     />
-                  ) : isSelected && !locked ? (
-                    <input
-                      type="text"
-                      ref={(el) => {
-                        if (el) {
-                          if (document.activeElement !== el) {
-                            el.focus({ preventScroll: true });
-                          }
-                          const font = field.fontFamily || 'Inter';
-                          el.style.setProperty('font-family', `"${font}", cursive, sans-serif`, 'important');
-                        }
-                      }}
-                      value={field.value || ''}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        setFields((prev) =>
-                          prev.map((f) => (f.id === field.id ? { ...f, value: val } : f))
-                        );
-                      }}
-                      onMouseDown={(e) => {
-                        handleMouseDown(field.id, e);
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          setSelectedFieldId(null);
-                        }
-                      }}
-                      style={{
-                        fontFamily: field.fontFamily ? `"${field.fontFamily}", cursive, sans-serif` : 'Inter, sans-serif',
-                      }}
-                      className="text-xs font-bold px-1.5 py-0.5 rounded bg-white/95 dark:bg-card/95 border border-primary text-foreground outline-none w-full text-center"
-                    />
                   ) : (
-                    <span
-                      className="text-xs font-semibold px-2 py-0.5 rounded pointer-events-none font-bold"
-                      style={{
-                        color: 'var(--fg)',
-                        fontFamily: field.fontFamily ? `"${field.fontFamily}", cursive, sans-serif` : 'Inter, sans-serif',
+                    <div
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onOpenSignatureModal(field.id);
                       }}
+                      className="flex items-center gap-1 text-xs font-bold cursor-pointer"
+                      style={{ color: 'var(--moss)' }}
                     >
-                      {field.value}
-                    </span>
+                      <PenTool style={{ height: 12, width: 12 }} />
+                      <span>Sign</span>
+                    </div>
                   )
-                ) : (
-                  <div
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onOpenSignatureModal(field.id);
+                ) : isSelected && !locked ? (
+                  <FastTextInput
+                    value={field.value || ''}
+                    fontFamily={field.fontFamily || 'Inter'}
+                    onCommit={(val) => {
+                      setFields((prev) =>
+                        prev.map((f) => (f.id === field.id ? { ...f, value: val } : f))
+                      );
                     }}
-                    className="flex items-center gap-1 text-xs font-bold cursor-pointer"
-                    style={{ color: 'var(--moss)' }}
+                    onPressEnter={() => setSelectedFieldId(null)}
+                    placeholder={field.fieldType === 'name' ? 'Your Name' : 'Enter text'}
+                    autoFocus
+                    className="text-xs font-bold px-1.5 py-0.5 rounded bg-white/95 dark:bg-card/95 border border-primary text-foreground outline-none w-full text-center"
+                  />
+                ) : (
+                  <span
+                    className="text-xs font-semibold px-2 py-0.5 rounded pointer-events-none font-bold truncate select-none"
+                    style={{
+                      color: 'var(--fg)',
+                      fontFamily: field.fontFamily ? `"${field.fontFamily}", cursive, sans-serif` : 'Inter, sans-serif',
+                    }}
                   >
-                    <PenTool style={{ height: 12, width: 12 }} />
-                    <span>Sign</span>
-                  </div>
+                    {field.value || (field.fieldType === 'name' ? 'Your Name' : 'Text')}
+                  </span>
                 )}
 
                 {/* Floating Context Toolbar when field is selected */}

@@ -29,7 +29,9 @@ import { deliveryService } from '../services/deliveryService';
 import { Recipient, Document, SignatureField, SavedSignature } from '../types';
 import { SignaturePadModal } from './modals/SignaturePadModal';
 import { useToastStore } from '../store/useToastStore';
-import { getSignerColor } from './PdfViewer';
+import { getSignerColor, TEXT_FONT_OPTIONS } from './PdfViewer';
+import { Dropdown } from './ui/Dropdown';
+import { FastTextInput } from './ui/FastTextInput';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { getSavedSignatures, getDefaultSignature, getLocalPdfBlob } from '../lib/storage';
 
@@ -926,6 +928,7 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
       delete copy[fieldId];
       return copy;
     });
+    setSelectedFieldId((prev) => (prev === fieldId ? null : prev));
     useToastStore.getState().showToast('Field removed', 'info');
   };
 
@@ -1311,12 +1314,70 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
                           <button
                             onClick={(e) => handleRemoveField(field.id, e)}
                             onMouseDown={(e) => e.stopPropagation()}
-                            className="absolute -top-2.5 -right-2.5 h-5 w-5 rounded-full bg-rose-500 hover:bg-rose-600 text-white text-[10px] font-bold flex items-center justify-center shadow-md z-40 transition-transform hover:scale-110"
+                            className="absolute -top-2.5 -right-2.5 h-6 w-6 rounded-full flex items-center justify-center transition-all duration-200 z-40 cursor-pointer"
+                            style={{
+                              background: '#A85448',
+                              color: '#fff',
+                              boxShadow: '0 2px 8px rgba(168,84,72,0.40)',
+                            }}
                             title="Remove field"
                             aria-label="Remove field"
                           >
-                            ✕
+                            <Trash2 style={{ height: 11, width: 11 }} />
                           </button>
+                        )}
+
+                        {/* Floating Text/Date Customization Toolbar when field is selected */}
+                        {mine && isSelected && (field.fieldType === 'text' || field.fieldType === 'name' || field.fieldType === 'date') && (
+                          <div
+                            onMouseDown={(e) => e.stopPropagation()}
+                            onClick={(e) => e.stopPropagation()}
+                            className={`absolute z-50 flex items-center gap-1.5 p-1 rounded-full animate-fadeIn whitespace-nowrap overflow-visible ${
+                              field.y < 12 ? 'top-[calc(100%+8px)]' : 'bottom-[calc(100%+8px)]'
+                            } ${field.x > 40 ? 'right-0' : 'left-0'}`}
+                            style={{
+                              background: 'rgba(254, 254, 250, 0.98)',
+                              backdropFilter: 'blur(16px)',
+                              border: '1px solid var(--border)',
+                              boxShadow: '0 8px 24px -4px rgba(44, 44, 36, 0.22), 0 2px 6px rgba(44, 44, 36, 0.08)',
+                            }}
+                          >
+                            <div className="flex items-center gap-1 pl-1.5">
+                              <span className="text-[10px] font-bold" style={{ color: 'var(--fg-muted)' }}>Font:</span>
+                              <div className="w-28">
+                                <Dropdown
+                                  value={fieldValues[field.id]?.fontFamily || field.fontFamily || 'Inter'}
+                                  onChange={(val) => {
+                                    const font = String(val);
+                                    setFieldValues((prev) => ({
+                                      ...prev,
+                                      [field.id]: {
+                                        ...prev[field.id],
+                                        value: prev[field.id]?.value ?? field.value ?? (field.fieldType === 'name' ? recipient.name : 'Text'),
+                                        fontFamily: font,
+                                      },
+                                    }));
+                                    setFields((prev) =>
+                                      prev.map((f) => (f.id === field.id ? { ...f, fontFamily: font } : f))
+                                    );
+                                  }}
+                                  options={TEXT_FONT_OPTIONS}
+                                  buttonClassName="!h-7 !py-0 px-2 text-[11px] bg-white/90"
+                                  menuClassName="min-w-[170px]"
+                                />
+                              </div>
+                            </div>
+
+                            <button
+                              onClick={(e) => handleRemoveField(field.id, e)}
+                              onMouseDown={(e) => e.stopPropagation()}
+                              className="p-1 text-rose-500 hover:text-rose-600 hover:bg-rose-50 rounded-full transition-colors cursor-pointer mr-1"
+                              title="Delete field"
+                              aria-label="Delete field"
+                            >
+                              <Trash2 style={{ height: 13, width: 13 }} />
+                            </button>
+                          </div>
                         )}
 
                         {/* Animated "Sign Here" beacon */}
@@ -1332,7 +1393,7 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
 
                         {/* Drag to Reposition Indicator & Change Button */}
                         {mine && currentVal && isSelected && (
-                          <div className="absolute -bottom-6 left-2 flex items-center gap-1.5 z-40 whitespace-nowrap">
+                          <div className={`absolute ${field.y < 12 && (field.fieldType === 'text' || field.fieldType === 'name' || field.fieldType === 'date') ? 'top-[calc(100%+45px)]' : '-bottom-6'} left-2 flex items-center gap-1.5 z-40 whitespace-nowrap`}>
                             {field.fieldType === 'signature' && (
                               <button
                                 onClick={(e) => {
@@ -1376,14 +1437,32 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
                         )}
 
                         {/* Field Content */}
-                        {currentVal ? (
-                          currentVal.startsWith('data:image') ? (
+                        {field.fieldType === 'signature' ? (
+                          currentVal && currentVal.startsWith('data:image') ? (
                             <img
                               src={currentVal}
                               alt="Signature"
-                              className="h-full w-full object-contain pointer-events-none"
+                              className="h-full w-full object-contain pointer-events-none select-none"
                             />
+                          ) : mine ? (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenSigModal(field.id);
+                              }}
+                              className="flex items-center gap-1.5 text-xs font-bold transition-transform hover:scale-105 cursor-pointer"
+                              style={{ color: signerColor }}
+                            >
+                              <PenTool className="h-3.5 w-3.5" />
+                              <span>Click to Sign</span>
+                            </button>
                           ) : (
+                            <span className="text-[10px] font-bold text-[var(--fg-muted)] opacity-60">
+                              Signature Field
+                            </span>
+                          )
+                        ) : field.fieldType === 'date' ? (
+                          currentVal ? (
                             <span
                               className="font-bold text-xs truncate px-1 text-center select-none"
                               style={{
@@ -1393,21 +1472,7 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
                             >
                               {currentVal}
                             </span>
-                          )
-                        ) : mine ? (
-                          field.fieldType === 'signature' ? (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleOpenSigModal(field.id);
-                              }}
-                              className="flex items-center gap-1.5 text-xs font-bold transition-transform hover:scale-105"
-                              style={{ color: signerColor }}
-                            >
-                              <PenTool className="h-3.5 w-3.5" />
-                              <span>Click to Sign</span>
-                            </button>
-                          ) : field.fieldType === 'date' ? (
+                          ) : mine ? (
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
@@ -1416,30 +1481,86 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
                                   month: 'short',
                                   day: 'numeric',
                                 });
-                                setFieldValues((prev) => ({ ...prev, [field.id]: { value: today } }));
+                                setFieldValues((prev) => ({
+                                  ...prev,
+                                  [field.id]: {
+                                    ...prev[field.id],
+                                    value: today,
+                                    fontFamily: prev[field.id]?.fontFamily || field.fontFamily || 'Inter',
+                                  },
+                                }));
                               }}
-                              className="flex items-center gap-1.5 text-xs font-bold transition-transform hover:scale-105"
+                              className="flex items-center gap-1.5 text-xs font-bold transition-transform hover:scale-105 cursor-pointer"
                               style={{ color: signerColor }}
                             >
                               <Calendar className="h-3.5 w-3.5" />
                               <span>Insert Date</span>
                             </button>
                           ) : (
-                            <input
-                              type="text"
-                              placeholder={field.fieldType === 'name' ? recipient.name : 'Enter text'}
-                              defaultValue={field.fieldType === 'name' ? recipient.name : ''}
-                              onBlur={(e) => {
-                                const v = e.target.value;
-                                if (v.trim()) setFieldValues((prev) => ({ ...prev, [field.id]: { value: v } }));
-                              }}
-                              className="w-full text-xs font-bold text-center bg-white/90 rounded border border-[var(--border-light)] p-1 outline-none"
-                            />
+                            <span className="text-[10px] font-bold text-[var(--fg-muted)] opacity-60">
+                              Date Field
+                            </span>
                           )
                         ) : (
-                          <span className="text-[10px] font-bold text-[var(--fg-muted)] opacity-60">
-                            Signer {field.signerOrder || ''}
-                          </span>
+                          /* Text or Name field */
+                          mine && isSelected ? (
+                            <FastTextInput
+                              value={currentVal || ''}
+                              fontFamily={fieldValues[field.id]?.fontFamily || field.fontFamily || 'Inter'}
+                              onCommit={(newVal) => {
+                                setFieldValues((prev) => ({
+                                  ...prev,
+                                  [field.id]: {
+                                    ...prev[field.id],
+                                    value: newVal,
+                                    fontFamily: prev[field.id]?.fontFamily || field.fontFamily || 'Inter',
+                                  },
+                                }));
+                                setFields((prev) =>
+                                  prev.map((f) => (f.id === field.id ? { ...f, value: newVal } : f))
+                                );
+                              }}
+                              onPressEnter={() => setSelectedFieldId(null)}
+                              placeholder={field.fieldType === 'name' ? recipient.name : 'Enter text'}
+                              autoFocus
+                              className="text-xs font-bold px-1.5 py-0.5 rounded bg-white/95 dark:bg-card/95 border border-primary text-foreground outline-none w-full text-center shadow-xs"
+                            />
+                          ) : currentVal ? (
+                            <span
+                              className="font-bold text-xs truncate px-1 text-center select-none"
+                              style={{
+                                color: mine ? 'var(--fg)' : '#5A5A52',
+                                fontFamily: fieldValues[field.id]?.fontFamily || field.fontFamily || 'Inter',
+                              }}
+                            >
+                              {currentVal}
+                            </span>
+                          ) : mine ? (
+                            <FastTextInput
+                              value=""
+                              fontFamily={fieldValues[field.id]?.fontFamily || field.fontFamily || 'Inter'}
+                              onCommit={(newVal) => {
+                                setFieldValues((prev) => ({
+                                  ...prev,
+                                  [field.id]: {
+                                    ...prev[field.id],
+                                    value: newVal,
+                                    fontFamily: prev[field.id]?.fontFamily || field.fontFamily || 'Inter',
+                                  },
+                                }));
+                                setFields((prev) =>
+                                  prev.map((f) => (f.id === field.id ? { ...f, value: newVal } : f))
+                                );
+                              }}
+                              onPressEnter={() => setSelectedFieldId(null)}
+                              placeholder={field.fieldType === 'name' ? recipient.name : 'Enter text'}
+                              className="text-xs font-bold px-1.5 py-0.5 rounded bg-white/90 border border-[var(--border-light)] text-foreground outline-none w-full text-center"
+                            />
+                          ) : (
+                            <span className="text-[10px] font-bold text-[var(--fg-muted)] opacity-60">
+                              {field.fieldType === 'name' ? 'Name Field' : 'Text Field'}
+                            </span>
+                          )
                         )}
                       </div>
                     );
