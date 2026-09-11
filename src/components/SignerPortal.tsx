@@ -750,7 +750,19 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
   };
 
   const handleSelectSignature = (dataUrl: string, targetFieldId?: string) => {
-    const fieldToFill = targetFieldId || activeSigFieldId;
+    // Only treat targetFieldId or activeSigFieldId as a field ID if it matches an actual existing field.
+    // Note: SignaturePadModal passes its label (e.g. "Drawn Signature", "Uploaded Signature")
+    // as the 2nd argument. We MUST NOT mistake that label for a field ID!
+    const currentFields = fieldsRef.current || fields;
+    const isRealField = (id?: string | null) =>
+      Boolean(id && typeof id === 'string' && currentFields.some((f) => f.id === id));
+
+    const fieldToFill = isRealField(targetFieldId)
+      ? targetFieldId!
+      : isRealField(activeSigFieldId)
+      ? activeSigFieldId!
+      : null;
+
     if (fieldToFill) {
       setFieldValues((prev) => ({
         ...prev,
@@ -773,8 +785,8 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
         pageNumber: currentPage,
         x: Math.round(posX * 10) / 10,
         y: Math.round(posY * 10) / 10,
-        width: 35,
-        height: 9,
+        width: 32,
+        height: 8,
         fieldType: 'signature',
         value: dataUrl,
         required: true,
@@ -1585,7 +1597,9 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
           setActiveSigFieldId(null);
           setPendingAddCoords(null);
         }}
-        onSelectSignature={handleSelectSignature}
+        onSelectSignature={(dataUrl) => {
+          handleSelectSignature(dataUrl, activeSigFieldId || undefined);
+        }}
       />
     </div>
   );
