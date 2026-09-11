@@ -469,20 +469,23 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 animate-fadeIn"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 animate-fadeIn"
       style={{ background: 'rgba(44,44,36,0.50)', backdropFilter: 'blur(10px)' }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
     >
       <div
-        className="card-organic animate-slideUp w-full sm:max-w-lg overflow-hidden"
+        className="card-organic animate-slideUp w-full sm:max-w-lg rounded-[2rem] sm:rounded-[2.5rem] overflow-hidden flex flex-col shadow-2xl"
         style={{
-          borderRadius: '2.5rem 2.5rem 0 0',
-          /* On sm+: full organic round */
-          ...(window.innerWidth >= 640 ? { borderRadius: '2.5rem' } : {}),
+          maxHeight: 'min(92vh, 760px)',
+          minHeight: 0,
         }}
+        onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
         <div
-          className="flex items-center justify-between px-6 py-4"
+          className="flex items-center justify-between px-5 sm:px-6 py-3.5 sm:py-4 shrink-0"
           style={{ borderBottom: '1px solid var(--border-light)' }}
         >
           <div className="flex items-center gap-2.5">
@@ -498,7 +501,7 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
           </div>
           <button
             onClick={onClose}
-            className="h-8 w-8 rounded-full flex items-center justify-center transition-all duration-200 hover:scale-110"
+            className="h-8 w-8 rounded-full flex items-center justify-center transition-all duration-200 hover:scale-110 cursor-pointer"
             style={{ background: 'var(--bg-stone)', color: 'var(--fg-muted)' }}
             aria-label="Close"
           >
@@ -507,32 +510,40 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
         </div>
 
         {/* Tab Bar — pill segment */}
-        <div
-          className="flex gap-1 p-1.5 mx-4 mt-4 rounded-full overflow-x-auto no-scrollbar"
-          style={{ background: 'var(--bg-stone)' }}
-          role="tablist"
-        >
-          {tabs.map((tab) => (
-            <button
-              key={tab.id}
-              role="tab"
-              aria-selected={activeTab === tab.id}
-              onClick={() => handleTabChange(tab.id as any)}
-              className="flex-1 flex items-center justify-center gap-1.5 py-2 px-2 sm:px-3 rounded-full text-xs font-bold transition-all duration-200 shrink-0"
-              style={{
-                background: activeTab === tab.id ? 'var(--moss)' : 'transparent',
-                color: activeTab === tab.id ? '#F3F4F1' : 'var(--fg-muted)',
-                boxShadow: activeTab === tab.id ? '0 4px 12px rgba(93,112,82,0.25)' : 'none',
-              }}
-            >
-              {tab.icon}
-              <span className="text-[11px] sm:text-xs font-bold whitespace-nowrap">{tab.label}</span>
-            </button>
-          ))}
+        <div className="px-4 pt-3 pb-1 shrink-0">
+          <div
+            className="flex gap-1 p-1.5 rounded-full overflow-x-auto no-scrollbar"
+            style={{ background: 'var(--bg-stone)' }}
+            role="tablist"
+          >
+            {tabs.map((tab) => (
+              <button
+                key={tab.id}
+                role="tab"
+                aria-selected={activeTab === tab.id}
+                onClick={() => handleTabChange(tab.id as any)}
+                className="flex-1 flex items-center justify-center gap-1.5 py-2 px-2 sm:px-3 rounded-full text-xs font-bold transition-all duration-200 shrink-0 cursor-pointer"
+                style={{
+                  background: activeTab === tab.id ? 'var(--moss)' : 'transparent',
+                  color: activeTab === tab.id ? '#F3F4F1' : 'var(--fg-muted)',
+                  boxShadow: activeTab === tab.id ? '0 4px 12px rgba(93,112,82,0.25)' : 'none',
+                }}
+              >
+                {tab.icon}
+                <span className="text-[11px] sm:text-xs font-bold whitespace-nowrap">{tab.label}</span>
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Tab Body */}
-        <div className="p-5 space-y-4">
+        <div
+          className="p-4 sm:p-5 space-y-4 overflow-y-auto flex-1 min-h-0"
+          style={{
+            scrollbarWidth: 'thin',
+            scrollbarColor: 'var(--moss) rgba(0,0,0,0.06)',
+          }}
+        >
 
           {/* ── Draw ─────────────────────────────────────── */}
           <div
@@ -1034,23 +1045,23 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
         </div>
 
         {/* Footer */}
-        {activeTab !== 'saved' && activeTab !== 'upload' && (
-          <div
-            className="px-5 pb-5 pt-0 flex items-center justify-end gap-3"
+        <div
+          className="px-5 py-3 sm:py-3.5 flex items-center justify-end gap-3 shrink-0 border-t border-[var(--border-light)] bg-[var(--surface)]"
+        >
+          <button
+            onClick={onClose}
+            className="btn-ghost"
+            style={{ color: 'var(--fg-muted)' }}
           >
-            <button
-              onClick={onClose}
-              className="btn-ghost"
-              style={{ color: 'var(--fg-muted)' }}
-            >
-              Cancel
-            </button>
+            Cancel
+          </button>
+          {activeTab !== 'saved' && activeTab !== 'upload' && (
             <button onClick={handleSaveAndSelect} className="btn-primary">
               <Check style={{ height: 15, width: 15 }} />
               <span>Use Signature</span>
             </button>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </div>
   );
