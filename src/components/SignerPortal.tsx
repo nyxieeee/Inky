@@ -20,6 +20,8 @@ import {
   Plus,
   Trash2,
   Home,
+  FileSignature,
+  Pencil,
 } from 'lucide-react';
 import { deliveryService } from '../services/deliveryService';
 import { Recipient, Document, SignatureField, SavedSignature } from '../types';
@@ -74,6 +76,7 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
   }>({ x: 0, y: 0, width: 0, height: 0 });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submittedResult, setSubmittedResult] = useState<{ allComplete: boolean; message: string } | null>(null);
+  const [isReopening, setIsReopening] = useState(false);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -91,6 +94,7 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
     setFieldValues({});
     setSelectedFieldId(null);
     setSubmittedResult(null);
+    setIsReopening(false);
 
     deliveryService.getSignerContext(token)
       .then((ctx) => {
@@ -446,8 +450,8 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
     }
   };
 
-  // Check if this recipient already signed previously
-  if (recipient.status === 'signed' && !submittedResult) {
+  // Check if this recipient already signed previously (and hasn't chosen to reopen/edit)
+  if (recipient.status === 'signed' && !submittedResult && !isReopening) {
     return (
       <div
         onClick={handleGoHome}
@@ -485,18 +489,44 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
               </div>
             )}
           </div>
-          <div className="pt-2">
+          <div className="pt-2 flex flex-col gap-2.5">
+            <button
+              onClick={() => setIsReopening(true)}
+              className="btn-primary w-full justify-center text-xs py-3 flex items-center gap-2 shadow-sm cursor-pointer"
+              style={{ background: 'var(--moss)' }}
+            >
+              <Pencil className="h-4 w-4" />
+              <span>Reopen & Edit Signature</span>
+            </button>
+
+            {context.pdfBlob && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  const url = URL.createObjectURL(context.pdfBlob!);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `${doc.title}.pdf`;
+                  a.click();
+                  URL.revokeObjectURL(url);
+                }}
+                className="btn-outline w-full justify-center text-xs py-2.5 flex items-center gap-2 cursor-pointer"
+              >
+                <Download className="h-4 w-4" />
+                <span>Download Signed Document</span>
+              </button>
+            )}
+
             <button
               onClick={handleGoHome}
-              className="btn-primary w-full justify-center text-xs py-3 flex items-center gap-2 shadow-sm"
-              style={{ background: 'var(--moss)' }}
+              className="btn-ghost w-full justify-center text-xs py-2 flex items-center gap-2 opacity-80 hover:opacity-100 cursor-pointer"
             >
               <Home className="h-4 w-4" />
               <span>Back to Home Page</span>
             </button>
           </div>
           <p className="text-[10px] text-[var(--fg-muted)] opacity-70">
-            Click anywhere outside or the button above to go to home page
+            Click anywhere outside or a button above to proceed
           </p>
         </div>
       </div>
@@ -540,6 +570,17 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
           </div>
 
           <div className="flex flex-col sm:flex-row gap-3 pt-1">
+            <button
+              onClick={() => {
+                setSubmittedResult(null);
+                setIsReopening(true);
+              }}
+              className="btn-outline flex-1 justify-center text-xs py-3 flex items-center gap-2 cursor-pointer"
+            >
+              <Pencil className="h-4 w-4" />
+              <span>Edit / Re-sign</span>
+            </button>
+
             {context.pdfBlob && (
               <button
                 onClick={(e) => {
@@ -551,16 +592,16 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
                   a.click();
                   URL.revokeObjectURL(url);
                 }}
-                className="btn-outline flex-1 justify-center text-xs py-3 flex items-center gap-2"
+                className="btn-outline flex-1 justify-center text-xs py-3 flex items-center gap-2 cursor-pointer"
               >
                 <Download className="h-4 w-4" />
-                <span>Download Document</span>
+                <span>Download PDF</span>
               </button>
             )}
 
             <button
               onClick={handleGoHome}
-              className="btn-primary flex-1 justify-center text-xs py-3 flex items-center gap-2 shadow-sm"
+              className="btn-primary flex-1 justify-center text-xs py-3 flex items-center gap-2 shadow-sm cursor-pointer"
               style={{ background: 'var(--moss)' }}
             >
               <Home className="h-4 w-4" />
@@ -837,10 +878,30 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
             ) : (
               <Send className="h-4 w-4" />
             )}
-            <span>Finish & Submit</span>
+            <span>{isReopening || recipient.status === 'signed' ? 'Update & Resubmit' : 'Finish & Submit'}</span>
           </button>
         </div>
       </header>
+
+      {/* ── Reopen Alert Banner (when editing an already-signed document) ── */}
+      {(isReopening || recipient.status === 'signed') && (
+        <div className="mx-4 sm:mx-6 my-2 p-3 rounded-2xl bg-amber-500/10 border border-amber-500/25 flex items-center justify-between gap-3 text-xs animate-fadeIn">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0" />
+            <span className="text-[var(--fg)]">
+              <strong>Editing Signed Document:</strong> You previously signed this document on{' '}
+              {recipient.signedAt ? new Date(recipient.signedAt).toLocaleString() : 'earlier'}.
+              You can reposition, resize, or replace your signature, then click <strong>Update & Resubmit</strong>.
+            </span>
+          </div>
+          <button
+            onClick={() => setIsReopening(false)}
+            className="text-[11px] font-bold text-amber-700 dark:text-amber-400 hover:underline shrink-0 cursor-pointer px-2 py-1 rounded-lg hover:bg-amber-500/10"
+          >
+            Back to Summary
+          </button>
+        </div>
+      )}
 
       {/* ── Subheader Controls ─────────────────────────────────── */}
       <div
@@ -1062,11 +1123,26 @@ export const SignerPortal: React.FC<SignerPortalProps> = ({ token, onBack }) => 
                   </div>
                 )}
 
-                {/* Drag to Reposition Indicator (visible when selected) */}
+                {/* Drag to Reposition Indicator & Change Button (visible when selected) */}
                 {mine && currentVal && isSelected && (
-                  <div className="absolute -bottom-2.5 left-2 px-1.5 py-0.5 rounded-md bg-black/70 text-white text-[8px] font-bold flex items-center gap-1 pointer-events-none shadow-sm">
-                    <Move className="h-2 w-2" />
-                    <span>Drag to move · Corner to resize</span>
+                  <div className="absolute -bottom-6 left-2 flex items-center gap-1.5 z-40 whitespace-nowrap">
+                    {field.fieldType === 'signature' && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleOpenSigModal(field.id);
+                        }}
+                        className="px-2 py-0.5 rounded-md bg-[var(--moss)] hover:bg-[var(--moss)]/90 text-white text-[9px] font-bold shadow-sm cursor-pointer flex items-center gap-1"
+                        title="Change signature"
+                      >
+                        <Pencil className="h-2.5 w-2.5" />
+                        <span>Change</span>
+                      </button>
+                    )}
+                    <div className="px-1.5 py-0.5 rounded-md bg-black/75 text-white text-[8px] font-semibold flex items-center gap-1 pointer-events-none shadow-sm">
+                      <Move className="h-2 w-2" />
+                      <span>Drag to move · Corner to resize</span>
+                    </div>
                   </div>
                 )}
 

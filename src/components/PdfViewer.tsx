@@ -178,6 +178,40 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
     return () => { if (renderTask) renderTask.cancel(); };
   }, [pdfDoc, currentPage, scale]);
 
+  const getVisiblePlacement = () => {
+    let targetX = 35;
+    let targetY = 40;
+
+    if (scrollContainerRef.current && containerRef.current) {
+      const containerRect = containerRef.current.getBoundingClientRect();
+      const scrollRect = scrollContainerRef.current.getBoundingClientRect();
+
+      if (containerRect.height > 0 && containerRect.width > 0) {
+        const visibleTop = Math.max(containerRect.top, scrollRect.top);
+        const visibleBottom = Math.min(containerRect.bottom, scrollRect.bottom);
+        const visibleLeft = Math.max(containerRect.left, scrollRect.left);
+        const visibleRight = Math.min(containerRect.right, scrollRect.right);
+
+        if (visibleBottom > visibleTop) {
+          const centerY = (visibleTop + visibleBottom) / 2 - containerRect.top;
+          targetY = Math.max(8, Math.min(82, (centerY / containerRect.height) * 100));
+        }
+        if (visibleRight > visibleLeft) {
+          const centerX = (visibleLeft + visibleRight) / 2 - containerRect.left;
+          targetX = Math.max(10, Math.min(70, (centerX / containerRect.width) * 100));
+        }
+      }
+    } else {
+      targetX = 30 + (fields.length * 3) % 30;
+      targetY = 35 + (fields.length * 5) % 35;
+    }
+
+    return {
+      x: Math.round(targetX * 10) / 10,
+      y: Math.round(targetY * 10) / 10,
+    };
+  };
+
   const addField = (fieldType: FieldType) => {
     const nowStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
     let initialValue = '';
@@ -185,12 +219,14 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
     if (fieldType === 'name') initialValue = 'Your Name';
     if (fieldType === 'text') initialValue = 'Text';
 
+    const { x, y } = getVisiblePlacement();
+
     const newField: SignatureField = {
       id: `field_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
       documentId,
       pageNumber: currentPage,
-      x: 30 + (fields.length * 3) % 30,
-      y: 35 + (fields.length * 5) % 35,
+      x,
+      y,
       width:  fieldType === 'signature' ? 24 : 20,
       height: fieldType === 'signature' ? 8 : 5,
       fieldType,
@@ -346,13 +382,14 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
       const rect = containerRef.current?.getBoundingClientRect();
       const pageAspect = rect ? rect.height / rect.width : 1.4;
       const targetWidth = Math.min(48, Math.max(14, defaultHeight * pageAspect * naturalAspect));
+      const { x, y } = getVisiblePlacement();
 
       const newField: SignatureField = {
         id: `field_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
         documentId,
         pageNumber: currentPage,
-        x: 30 + (fields.length * 3) % 30,
-        y: 35 + (fields.length * 5) % 35,
+        x,
+        y,
         width: Math.round(targetWidth * 10) / 10,
         height: defaultHeight,
         fieldType: 'signature',
@@ -367,13 +404,14 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
 
   const handleAddNewSignature = () => {
     setIsSigDropdownOpen(false);
+    const { x, y } = getVisiblePlacement();
     const newFieldId = `field_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
     const newField: SignatureField = {
       id: newFieldId,
       documentId,
       pageNumber: currentPage,
-      x: 30 + (fields.length * 3) % 30,
-      y: 35 + (fields.length * 5) % 35,
+      x,
+      y,
       width: 24,
       height: 8,
       fieldType: 'signature',
@@ -386,17 +424,30 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
   };
 
   // Shared pill button for toolbar tools
-  const toolBtn = (label: string, icon: React.ReactNode, onClick: () => void) => (
+  const toolBtn = (
+    label: string,
+    icon: React.ReactNode,
+    onClick: () => void,
+    shortLabel?: string
+  ) => (
     <button
       onClick={onClick}
-      className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-all duration-200 whitespace-nowrap hover:scale-105"
+      className="flex items-center gap-1.5 px-3 sm:px-3.5 py-1.5 rounded-full text-xs font-bold transition-all duration-200 whitespace-nowrap hover:scale-105 active:scale-95 cursor-pointer shadow-xs"
       style={{
         background: 'rgba(93,112,82,0.10)',
         color: 'var(--moss)',
-        border: '1px solid rgba(93,112,82,0.18)',
+        border: '1px solid rgba(93,112,82,0.20)',
       }}
     >
-      {icon}{label}
+      {icon}
+      {shortLabel ? (
+        <>
+          <span className="inline sm:hidden">{shortLabel}</span>
+          <span className="hidden sm:inline">{label}</span>
+        </>
+      ) : (
+        <span>{label}</span>
+      )}
     </button>
   );
 
@@ -410,128 +461,57 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
   ];
 
   return (
-    <div
-      className="card-organic rounded-[2rem] overflow-hidden flex flex-col"
-      style={{ minHeight: 0, flex: 1 }}
-    >
-      {/* ── Floating Toolbar ─────────────────────────────── */}
+    <>
       <div
-        className="glass px-4 flex items-center justify-between gap-3 z-30 relative shrink-0 overflow-visible"
+        className="card-organic rounded-[2rem] overflow-hidden flex flex-col"
+        style={{ minHeight: 0, flex: 1 }}
+      >
+      {/* ── Top Control Bar ─────────────────────────────── */}
+      <div
+        className="glass px-3 sm:px-4 flex items-center justify-between gap-2 z-30 sticky top-0 shrink-0 overflow-visible"
         style={{
-          height: 50,
-          minHeight: 50,
+          height: 52,
+          minHeight: 52,
           borderBottom: '1px solid var(--border-light)',
         }}
       >
-        {/* Field type tools */}
-        <div className="flex items-center gap-1.5 shrink-0 overflow-visible">
-          {toolBtn('+ Signature Field', <PenTool style={{ height: 13, width: 13 }} />, () => addField('signature'))}
-
-          {/* Stamp My Sig Dropdown Menu */}
-          <div className="relative z-50 overflow-visible" ref={sigDropdownRef}>
-            <button
-              onClick={() => {
-                setSavedSignatures(getSavedSignatures());
-                setIsSigDropdownOpen((prev) => !prev);
-              }}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-all duration-200 whitespace-nowrap hover:scale-105"
-              style={{
-                background: isSigDropdownOpen ? 'var(--moss)' : 'rgba(93,112,82,0.10)',
-                color: isSigDropdownOpen ? '#F3F4F1' : 'var(--moss)',
-                border: '1px solid rgba(93,112,82,0.18)',
-              }}
-              aria-label="Stamp saved signature"
-              aria-haspopup="true"
-              aria-expanded={isSigDropdownOpen}
-              title="Stamp your saved signature directly"
-            >
-              <FileSignature style={{ height: 13, width: 13 }} />
-              <span>Stamp My Sig</span>
-              <ChevronDown
-                style={{
-                  height: 11,
-                  width: 11,
-                  transform: isSigDropdownOpen ? 'rotate(180deg)' : 'none',
-                  transition: 'transform 0.2s ease',
-                }}
-              />
-            </button>
-
-            {isSigDropdownOpen && (
-              <div
-                className="absolute top-full left-0 mt-2 w-72 rounded-[1.75rem] p-2.5 z-[100] animate-fadeIn"
-                style={{
-                  background: 'var(--surface)',
-                  border: '1px solid var(--border)',
-                  boxShadow: '0 16px 40px -8px rgba(44,44,36,0.22), 0 0 0 1px rgba(93,112,82,0.12)',
-                }}
-              >
-                <div className="px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-left" style={{ color: 'var(--fg-muted)' }}>
-                  Your Signatures
-                </div>
-                <div className="max-h-56 overflow-y-auto space-y-1 my-1 pr-1">
-                  {savedSignatures.length === 0 ? (
-                    <div className="px-3 py-4 text-xs text-center font-medium" style={{ color: 'var(--fg-muted)' }}>
-                      No saved signatures found
-                    </div>
-                  ) : (
-                    savedSignatures.map((sig) => (
-                      <button
-                        key={sig.id}
-                        onClick={() => handleSelectSavedSignature(sig.dataUrl)}
-                        className="w-full flex items-center justify-between gap-3 px-3 py-2 rounded-2xl text-left transition-colors hover:bg-[var(--moss-dim)] group"
-                      >
-                        <div className="h-8 w-28 flex items-center justify-center p-1 rounded-xl bg-white/90 border border-[var(--border-light)] shrink-0">
-                          <img src={sig.dataUrl} alt={sig.label} className="h-full max-w-full object-contain" />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <span className="text-xs font-bold truncate block" style={{ color: 'var(--fg)' }}>
-                            {sig.label || 'Saved Signature'}
-                          </span>
-                          {sig.isDefault && (
-                            <span className="text-[10px] font-bold" style={{ color: 'var(--moss)' }}>Default</span>
-                          )}
-                        </div>
-                      </button>
-                    ))
-                  )}
-                </div>
-                <div className="h-px my-1" style={{ background: 'var(--border-light)' }} />
-                <button
-                  onClick={handleAddNewSignature}
-                  className="w-full flex items-center gap-2 px-3 py-2.5 rounded-2xl text-xs font-bold transition-colors hover:bg-[var(--moss-dim)]"
-                  style={{ color: 'var(--moss)' }}
-                >
-                  <PlusCircle style={{ height: 16, width: 16 }} />
-                  <span>Add New Signature</span>
-                </button>
-              </div>
-            )}
+        {/* Document status / field count indicator */}
+        <div className="flex items-center gap-2 shrink-0">
+          <div
+            className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold"
+            style={{
+              background: 'rgba(93,112,82,0.08)',
+              color: 'var(--moss)',
+              border: '1px solid rgba(93,112,82,0.15)',
+            }}
+          >
+            <FileSignature style={{ height: 13, width: 13 }} />
+            <span>{fields.length} {fields.length === 1 ? 'field' : 'fields'}</span>
           </div>
-          {toolBtn('+ Date',     <Calendar style={{ height: 13, width: 13 }} />, () => addField('date'))}
-          {toolBtn('+ Text',     <Type     style={{ height: 13, width: 13 }} />, () => addField('text'))}
         </div>
 
         {/* Controls */}
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
           {/* Page nav */}
           <div
-            className="flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-semibold"
+            className="flex items-center gap-1 px-2.5 sm:px-3 py-1.5 rounded-full text-xs font-semibold"
             style={{ background: 'rgba(255,255,255,0.60)', border: '1px solid var(--border)', color: 'var(--fg-muted)' }}
           >
             <button
               onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
               disabled={currentPage <= 1}
               aria-label="Previous page"
+              className="hover:text-[var(--moss)] disabled:opacity-30 cursor-pointer"
             >
               <ChevronLeft style={{ height: 16, width: 16 }} />
             </button>
-            <span className="font-bold px-1" style={{ color: 'var(--fg)' }}>{currentPage}</span>
-            <span>/ {numPages}</span>
+            <span className="font-bold px-0.5 sm:px-1 text-xs" style={{ color: 'var(--fg)' }}>{currentPage}</span>
+            <span className="text-[11px]">/ {numPages}</span>
             <button
               onClick={() => setCurrentPage((p) => Math.min(numPages, p + 1))}
               disabled={currentPage >= numPages}
               aria-label="Next page"
+              className="hover:text-[var(--moss)] disabled:opacity-30 cursor-pointer"
             >
               <ChevronRight style={{ height: 16, width: 16 }} />
             </button>
@@ -546,6 +526,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
               onClick={() => setScale((s) => Math.max(0.6, s - 0.15))}
               style={{ color: 'var(--fg-muted)' }}
               aria-label="Zoom out"
+              className="hover:text-[var(--moss)] cursor-pointer"
             >
               <ZoomOut style={{ height: 14, width: 14 }} />
             </button>
@@ -561,6 +542,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
               onClick={() => setScale((s) => Math.min(2.5, s + 0.15))}
               style={{ color: 'var(--fg-muted)' }}
               aria-label="Zoom in"
+              className="hover:text-[var(--moss)] cursor-pointer"
             >
               <ZoomIn style={{ height: 14, width: 14 }} />
             </button>
@@ -637,7 +619,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
             setSelectedFieldId(null);
           }}
         >
-          <div className="min-w-full min-h-full w-fit flex items-center justify-center m-auto">
+          <div className="min-w-full min-h-full w-fit flex items-center justify-center m-auto pb-28">
             <div
               ref={containerRef}
               className="relative block shrink-0 m-auto"
@@ -901,5 +883,129 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
       </div>
     </div>
   </div>
+
+    {/* ── Floating Action Bar (Follows user as they scroll) ─────── */}
+    <div
+      className="fixed bottom-6 inset-x-0 mx-auto w-fit z-40 flex items-center justify-center gap-1.5 sm:gap-2 px-3.5 py-2 rounded-full glass select-none max-w-[calc(100vw-2rem)] overflow-visible shadow-float transition-all duration-300"
+      style={{
+        left: 0,
+        right: 0,
+        marginLeft: 'auto',
+        marginRight: 'auto',
+        width: 'fit-content',
+        background: 'rgba(254, 254, 250, 0.95)',
+        backdropFilter: 'blur(20px)',
+        border: '1px solid var(--border)',
+        boxShadow: '0 16px 40px -8px rgba(44,44,36,0.22), 0 0 0 1px rgba(93,112,82,0.12)',
+      }}
+      role="toolbar"
+      aria-label="Document signature tools"
+    >
+      {/* + Signature Field */}
+      {toolBtn(
+        '+ Signature Field',
+        <PenTool style={{ height: 13, width: 13 }} />,
+        () => addField('signature'),
+        '+ Signature'
+      )}
+
+      {/* Stamp My Sig Dropdown Menu */}
+      <div className="relative z-50 overflow-visible" ref={sigDropdownRef}>
+        <button
+          onClick={() => {
+            setSavedSignatures(getSavedSignatures());
+            setIsSigDropdownOpen((prev) => !prev);
+          }}
+          className="flex items-center gap-1.5 px-3 sm:px-3.5 py-1.5 rounded-full text-xs font-bold transition-all duration-200 whitespace-nowrap hover:scale-105 active:scale-95 cursor-pointer shadow-xs"
+          style={{
+            background: isSigDropdownOpen ? 'var(--moss)' : 'rgba(93,112,82,0.10)',
+            color: isSigDropdownOpen ? '#F3F4F1' : 'var(--moss)',
+            border: '1px solid rgba(93,112,82,0.20)',
+          }}
+          aria-label="Stamp saved signature"
+          aria-haspopup="true"
+          aria-expanded={isSigDropdownOpen}
+          title="Stamp your saved signature directly"
+        >
+          <FileSignature style={{ height: 13, width: 13 }} />
+          <span className="inline sm:hidden">Stamp</span>
+          <span className="hidden sm:inline">Stamp My Sig</span>
+          <ChevronDown
+            style={{
+              height: 11,
+              width: 11,
+              transform: isSigDropdownOpen ? 'rotate(180deg)' : 'none',
+              transition: 'transform 0.2s ease',
+            }}
+          />
+        </button>
+
+        {isSigDropdownOpen && (
+          <div
+            className="absolute bottom-full left-0 mb-3 w-72 rounded-[1.75rem] p-2.5 z-[100] animate-fadeIn"
+            style={{
+              background: 'var(--surface)',
+              border: '1px solid var(--border)',
+              boxShadow: '0 16px 40px -8px rgba(44,44,36,0.24), 0 0 0 1px rgba(93,112,82,0.12)',
+            }}
+          >
+            <div className="px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-left" style={{ color: 'var(--fg-muted)' }}>
+              Your Signatures
+            </div>
+            <div className="max-h-56 overflow-y-auto space-y-1 my-1 pr-1">
+              {savedSignatures.length === 0 ? (
+                <div className="px-3 py-4 text-xs text-center font-medium" style={{ color: 'var(--fg-muted)' }}>
+                  No saved signatures found
+                </div>
+              ) : (
+                savedSignatures.map((sig) => (
+                  <button
+                    key={sig.id}
+                    onClick={() => handleSelectSavedSignature(sig.dataUrl)}
+                    className="w-full flex items-center justify-between gap-3 px-3 py-2 rounded-2xl text-left transition-colors hover:bg-[var(--moss-dim)] group cursor-pointer"
+                  >
+                    <div className="h-8 w-28 flex items-center justify-center p-1 rounded-xl bg-white/90 border border-[var(--border-light)] shrink-0">
+                      <img src={sig.dataUrl} alt={sig.label} className="h-full max-w-full object-contain" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <span className="text-xs font-bold truncate block" style={{ color: 'var(--fg)' }}>
+                        {sig.label || 'Saved Signature'}
+                      </span>
+                      {sig.isDefault && (
+                        <span className="text-[10px] font-bold" style={{ color: 'var(--moss)' }}>Default</span>
+                      )}
+                    </div>
+                  </button>
+                ))
+              )}
+            </div>
+            <div className="h-px my-1" style={{ background: 'var(--border-light)' }} />
+            <button
+              onClick={handleAddNewSignature}
+              className="w-full flex items-center gap-2 px-3 py-2.5 rounded-2xl text-xs font-bold transition-colors hover:bg-[var(--moss-dim)] cursor-pointer"
+              style={{ color: 'var(--moss)' }}
+            >
+              <PlusCircle style={{ height: 16, width: 16 }} />
+              <span>Add New Signature</span>
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* + Date */}
+      {toolBtn(
+        '+ Date',
+        <Calendar style={{ height: 13, width: 13 }} />,
+        () => addField('date')
+      )}
+
+      {/* + Text */}
+      {toolBtn(
+        '+ Text',
+        <Type style={{ height: 13, width: 13 }} />,
+        () => addField('text')
+      )}
+    </div>
+  </>
   );
 };

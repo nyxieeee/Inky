@@ -392,7 +392,7 @@ export function App() {
 
   return (
     <FoldableLayout
-      activeTab={activeTab === 'editor' ? 'dashboard' : (activeTab as any)}
+      activeTab={activeTab}
       setActiveTab={(tab) => {
         if (tab === 'dashboard' && selectedDoc) clearSelection();
         setActiveTab(tab as any);

@@ -616,9 +616,13 @@ export const deliveryService = {
       }
     }
 
+    const wasAlreadySigned = recipient.status === 'signed';
+
     return {
       success: true,
-      message: allComplete ? 'Document successfully completed by all signers!' : 'Your signature has been recorded!',
+      message: wasAlreadySigned
+        ? 'Your revised signature has been recorded and the document has been updated!'
+        : (allComplete ? 'Document successfully completed by all signers!' : 'Your signature has been recorded!'),
       allComplete,
     };
   },
