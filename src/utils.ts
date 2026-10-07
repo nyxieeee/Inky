@@ -361,6 +361,106 @@ export async function separateSignatureAndPrintedName(
 }
 
 /**
+ * Adds the current date below a signature image.
+ * Renders date in a small, clean font at the bottom of the canvas.
+ */
+export async function addDateToSignature(
+  sigDataUrl: string,
+  textColor: string = '#2C2C24'
+): Promise<string> {
+  const dateStr = new Date().toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  });
+
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      // Measure visible bounding box
+      const tempCanvas = document.createElement('canvas');
+      tempCanvas.width = img.width;
+      tempCanvas.height = img.height;
+      const tempCtx = tempCanvas.getContext('2d');
+      if (!tempCtx) { resolve(sigDataUrl); return; }
+      tempCtx.drawImage(img, 0, 0);
+
+      let minX = img.width, minY = img.height, maxX = 0, maxY = 0;
+      let hasPixels = false;
+      try {
+        const imgData = tempCtx.getImageData(0, 0, img.width, img.height);
+        const data = imgData.data;
+        for (let y = 0; y < img.height; y++) {
+          for (let x = 0; x < img.width; x++) {
+            if (data[(y * img.width + x) * 4 + 3] > 10) {
+              if (x < minX) minX = x;
+              if (x > maxX) maxX = x;
+              if (y < minY) minY = y;
+              if (y > maxY) maxY = y;
+              hasPixels = true;
+            }
+          }
+        }
+      } catch {}
+
+      const cropW = hasPixels ? Math.max(1, maxX - minX + 1) : img.width;
+      const cropH = hasPixels ? Math.max(1, maxY - minY + 1) : img.height;
+      const cropX = hasPixels ? minX : 0;
+      const cropY = hasPixels ? minY : 0;
+
+      const scale = cropW < 500 ? Math.min(2.5, 700 / cropW) : 1;
+      const sigW = Math.round(cropW * scale);
+      const sigH = Math.round(cropH * scale);
+
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      if (!ctx) { resolve(sigDataUrl); return; }
+
+      // Date font: ~16% of signature height, minimum 14px
+      const fontSize = Math.max(14, Math.round(sigH * 0.16));
+      const fontSpec = `400 ${fontSize}px Inter, system-ui, -apple-system, sans-serif`;
+      ctx.font = fontSpec;
+      const textMetrics = ctx.measureText(dateStr);
+      const textWidth = textMetrics.width;
+      const actualAscent = textMetrics.actualBoundingBoxAscent || fontSize * 0.72;
+      const actualDescent = textMetrics.actualBoundingBoxDescent || fontSize * 0.22;
+
+      const gap = Math.round(fontSize * 0.4);
+      const paddingX = Math.round(fontSize * 0.5);
+      const contentWidth = Math.max(sigW, textWidth);
+      const totalWidth = contentWidth + paddingX * 2;
+
+      const sigTop = Math.round(fontSize * 0.15);
+      const sigBottom = sigTop + sigH;
+      const textBaselineY = sigBottom + gap + actualAscent;
+      const textBottom = textBaselineY + actualDescent;
+      const totalHeight = textBottom + fontSize * 0.3;
+
+      canvas.width = Math.round(totalWidth);
+      canvas.height = Math.round(totalHeight);
+
+      // Re-apply after resize
+      ctx.font = fontSpec;
+      ctx.fillStyle = textColor;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'alphabetic';
+
+      // Draw signature centered
+      const sigX = (totalWidth - sigW) / 2;
+      ctx.drawImage(tempCanvas, cropX, cropY, cropW, cropH, sigX, sigTop, sigW, sigH);
+
+      // Draw date centered below
+      ctx.fillText(dateStr, totalWidth / 2, textBaselineY);
+
+      resolve(trimCanvas(canvas, 6));
+    };
+    img.onerror = () => resolve(sigDataUrl);
+    img.src = sigDataUrl;
+  });
+}
+
+/**
  * Combines a signature image with a printed name underneath ("Signature over Printed Name")
  * Clean format: signature on top, printed name directly below without divider line, clear legible font.
  */
@@ -489,7 +589,23 @@ export async function combineSignatureAndName(
       const textBaselineY = sigBottom + gap + actualAscent;
       const textBottom = textBaselineY + actualDescent;
 
-      const totalHeight = Math.max(sigBottom + fontSize * 0.2, textBottom + fontSize * 0.3);
+      // 3. Date line below printed name
+      const dateStr = new Date().toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+      });
+      const dateFontSize = Math.max(12, Math.round(fontSize * 0.55));
+      const dateFontSpec = `400 ${dateFontSize}px Inter, system-ui, -apple-system, sans-serif`;
+      ctx.font = dateFontSpec;
+      const dateMetrics = ctx.measureText(dateStr);
+      const dateAscent = dateMetrics.actualBoundingBoxAscent || dateFontSize * 0.72;
+      const dateDescent = dateMetrics.actualBoundingBoxDescent || dateFontSize * 0.22;
+      const dateGap = Math.round(dateFontSize * 0.35);
+      const dateBaselineY = textBottom + dateGap + dateAscent;
+      const dateBottom = dateBaselineY + dateDescent;
+
+      const totalHeight = Math.max(sigBottom + fontSize * 0.2, dateBottom + dateFontSize * 0.3);
 
       canvas.width = Math.round(totalWidth);
       canvas.height = Math.round(totalHeight);
@@ -516,6 +632,11 @@ export async function combineSignatureAndName(
 
       // 2. Draw printed name with exact gap
       ctx.fillText(cleanName, totalWidth / 2, textBaselineY);
+
+      // 3. Draw date below printed name
+      ctx.font = dateFontSpec;
+      ctx.fillStyle = textColor;
+      ctx.fillText(dateStr, totalWidth / 2, dateBaselineY);
 
       const result = trimCanvas(canvas, 6);
       cacheSignatureMeta(result, {

@@ -1,21 +1,27 @@
 {
-  "short_name": "E-Sign",
-  "name": "E-Sign Personal Signature App",
+  "short_name": "Inky",
+  "name": "Inky — Automated E-signatures",
+  "description": "Personal digital signature app. Sign, send, and receive PDF documents beautifully.",
   "icons": [
     {
-      "src": "/icon-192.png",
+      "src": "/inky-mark.png",
       "type": "image/png",
-      "sizes": "192x192"
+      "sizes": "280x308",
+      "purpose": "any maskable"
     },
     {
-      "src": "/icon-512.png",
+      "src": "/logo-full.png",
       "type": "image/png",
-      "sizes": "512x512"
+      "sizes": "1024x1024",
+      "purpose": "any"
     }
   ],
   "start_url": "/",
-  "background_color": "#0f172a",
-  "theme_color": "#4f46e5",
+  "scope": "/",
+  "background_color": "#FAF8F4",
+  "theme_color": "#5D7052",
   "display": "standalone",
-  "orientation": "any"
+  "orientation": "any",
+  "categories": ["productivity", "business"],
+  "prefer_related_applications": false
 }

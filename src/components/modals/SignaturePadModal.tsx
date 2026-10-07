@@ -3,7 +3,7 @@ import SignaturePad from 'signature_pad';
 import { X, PenTool, Type, Upload, History, Check, RotateCcw, ChevronDown, Minus, Plus, ShieldCheck } from 'lucide-react';
 import { saveSignature, getSavedSignatures } from '../../lib/storage';
 import { SavedSignature } from '../../types';
-import { trimCanvas, processUploadedSignature, combineSignatureAndName, separateSignatureAndPrintedName, cacheSignatureMeta } from '../../utils';
+import { trimCanvas, processUploadedSignature, combineSignatureAndName, addDateToSignature, separateSignatureAndPrintedName, cacheSignatureMeta } from '../../utils';
 import { useToastStore } from '../../store/useToastStore';
 import { Dropdown } from '../ui/Dropdown';
 
@@ -809,6 +809,8 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
 
       if (includePrintedName && effectiveName) {
         dataUrl = await combineSignatureAndName(rawSig, effectiveName, penColor, undefined, nameSpacing, nameFontSizeScale);
+      } else {
+        dataUrl = await addDateToSignature(rawSig, penColor);
       }
 
       cacheSignatureMeta(dataUrl, {
@@ -852,6 +854,8 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
         };
         if (includePrintedName && effectiveName) {
           cleanResult = await combineSignatureAndName(rawSig, effectiveName, penColor, undefined, nameSpacing, nameFontSizeScale);
+        } else {
+          cleanResult = await addDateToSignature(rawSig, penColor);
         }
         cacheSignatureMeta(cleanResult, {
           rawSignature: rawSig,
@@ -1328,8 +1332,10 @@ export const SignaturePadModal: React.FC<SignaturePadModalProps> = ({
             {savedSigs.map((s) => (
               <button
                 key={s.id}
-                onClick={() => {
-                  onSelectSignature(s.dataUrl, s.label, {
+                onClick={async () => {
+                  // Re-stamp the current date onto saved signatures
+                  const dated = await addDateToSignature(s.rawSignature || s.dataUrl);
+                  onSelectSignature(dated, s.label, {
                     rawSignature: s.rawSignature,
                     printedName: s.printedName,
                     printedNameScale: s.printedNameScale,
